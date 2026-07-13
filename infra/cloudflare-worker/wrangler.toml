@@ -1,0 +1,10 @@
+name = "agamani-adms-proxy"
+main = "worker.js"
+compatibility_date = "2026-07-01"
+
+[vars]
+# Base URL of the adms edge function (no trailing slash)
+SUPABASE_FUNCTION_URL = "https://YOUR-PROJECT.supabase.co/functions/v1/adms"
+
+# ADMS_SHARED_SECRET is a secret, not a var:
+#   npx wrangler secret put ADMS_SHARED_SECRET

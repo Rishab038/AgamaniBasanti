@@ -1,0 +1,40 @@
+# Nightly database backup — the Supabase free tier has NO automated
+# backups, so this is load-bearing, not optional.
+#
+# Setup (once):
+#   1. Repo Settings > Secrets > Actions > add SUPABASE_DB_URL
+#      (Supabase dashboard > Settings > Database > connection string,
+#      the "session pooler" URI works)
+#   2. That's it — runs at 21:00 UTC (02:30 IST) and keeps 30 days
+#      of dumps as workflow artifacts.
+#
+# Also doubles as the free-tier keep-warm ping.
+
+name: nightly-backup
+
+on:
+  schedule:
+    - cron: "0 21 * * *"
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dump database
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          sudo apt-get install -y postgresql-client >/dev/null
+          pg_dump "$DB_URL" \
+            --no-owner --no-privileges \
+            --schema=public \
+            -f "backup-$(date +%F).sql"
+          gzip "backup-$(date +%F).sql"
+
+      - name: Upload artifact (30-day retention)
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-backup-${{ github.run_id }}
+          path: backup-*.sql.gz
+          retention-days: 30

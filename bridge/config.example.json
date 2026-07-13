@@ -1,0 +1,7 @@
+{
+  "device_ip": "192.168.1.201",
+  "device_port": 4370,
+  "device_serial": "SAME-SERIAL-AS-IN-devices-TABLE",
+  "function_url": "https://YOUR-PROJECT.supabase.co/functions/v1/adms",
+  "shared_secret": "SAME-VALUE-AS-ADMS_SHARED_SECRET"
+}

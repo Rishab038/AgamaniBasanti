@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+.pnp/
+
+# Env & secrets — never commit
+.env
+.env.*
+!.env.example
+*.pem
+
+# Build output
+dist/
+build/
+.expo/
+web-build/
+.wrangler/
+
+# Supabase local dev
+supabase/.branches/
+supabase/.temp/
+
+# Bridge state
+bridge/last_sync.json
+bridge/config.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+.venv/

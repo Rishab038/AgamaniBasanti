@@ -1,0 +1,10 @@
+# Supabase project config (used by the Supabase CLI).
+# The ADMS function is called by a fingerprint machine, not a
+# logged-in user, so JWT verification is off — it authenticates
+# with the x-adms-secret header + device serial allowlist instead.
+
+[functions.adms]
+verify_jwt = false
+
+[functions.cleanup-selfies]
+verify_jwt = false

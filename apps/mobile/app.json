@@ -1,0 +1,41 @@
+{
+  "expo": {
+    "name": "Agamani Staff",
+    "slug": "agamani-staff",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.agamani.staff",
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-sqlite",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Attendance check-in only works when you are at the shop, so the app needs your location."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Attendance needs a selfie to confirm it is really you."
+        }
+      ]
+    ]
+  }
+}
