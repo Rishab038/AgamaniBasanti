@@ -1,15 +1,16 @@
-// Worker home: one giant button. Enabled only inside the geofence
-// (or on shop Wi-Fi); otherwise grey with a plain-language distance
-// message. Tap -> selfie -> queued locally -> synced.
-// Motion: pulse ring invites the tap, spring on press, animated
-// success overlay + haptics make a punch feel done.
+// Worker home — a personal day hub, not a punch card.
+// Live clock, glowing check-in button, today's punch timeline, and
+// month stats. Enabled only inside the geofence; otherwise the
+// button locks with a plain-language distance message.
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
   Modal,
   Pressable,
+  RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -17,16 +18,23 @@ import {
 } from "react-native";
 import * as Location from "expo-location";
 import * as Haptics from "expo-haptics";
+import { LinearGradient } from "expo-linear-gradient";
 import { CameraView, useCameraPermissions } from "expo-camera";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Branch, Profile, supabase } from "../lib/supabase";
 import { evaluateFence, FenceResult } from "../lib/geofence";
 import { runSpoofChecks } from "../lib/antispoof";
 import { performCheckin } from "../lib/checkin";
 import { drain, pendingCount } from "../lib/queue";
-import { colors, radius, shadow } from "../lib/theme";
+import { colors, gradients, radius, shadow } from "../lib/theme";
 
-const LAST_DIRECTION_KEY = "agamani.last_direction";
+type Punch = { direction: "IN" | "OUT"; server_ts: string };
+type MonthStats = { worked: number; late: number; absent: number };
+
+const istToday = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+const fmtClock = (d: Date) =>
+  d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" });
+const fmtPunch = (ts: string) =>
+  new Date(ts).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
 
 export default function HomeScreen({
   profile,
@@ -35,14 +43,16 @@ export default function HomeScreen({
   profile: Profile;
   branch: Branch;
 }) {
+  const [now, setNow] = useState(new Date());
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
   const [fence, setFence] = useState<FenceResult>({ inside: false, distance: null, via: "none" });
-  const [direction, setDirection] = useState<"IN" | "OUT">("IN");
+  const [punches, setPunches] = useState<Punch[]>([]);
+  const [stats, setStats] = useState<MonthStats | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [pending, setPending] = useState(0);
-  const [lastPunch, setLastPunch] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [success, setSuccess] = useState<{ title: string; sub: string } | null>(null);
   const [blocked, setBlocked] = useState<string | null>(null);
   const [camPerm, requestCamPerm] = useCameraPermissions();
   const [locGranted, setLocGranted] = useState<boolean | null>(null);
@@ -52,25 +62,69 @@ export default function HomeScreen({
   const press = useRef(new Animated.Value(1)).current;
   const successAnim = useRef(new Animated.Value(0)).current;
 
+  // direction derives from today's punch history: next is IN unless last was IN
+  const direction: "IN" | "OUT" =
+    punches.length > 0 && punches[punches.length - 1].direction === "IN" ? "OUT" : "IN";
+  const isOut = direction === "OUT";
   const enabled = fence.inside && !busy;
 
-  // today's punch direction toggles IN -> OUT (offline-safe)
+  // ---- live clock ----
   useEffect(() => {
-    AsyncStorage.getItem(LAST_DIRECTION_KEY).then((v) => {
-      const [day, dir, time] = (v ?? "").split("|");
-      if (day === new Date().toDateString()) {
-        if (dir === "IN") setDirection("OUT");
-        if (time) setLastPunch(`${dir === "IN" ? "Checked in" : "Checked out"} at ${time}`);
-      }
-    });
+    const t = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(t);
   }, []);
 
-  // inviting pulse ring while the button is live
+  // ---- server data: today's punches + month stats ----
+  const loadDay = useCallback(async () => {
+    try {
+      const dayStartUtc = new Date(`${istToday()}T00:00:00+05:30`).toISOString();
+      const monthStartIst = `${istToday().slice(0, 7)}-01`;
+      const [p, d] = await Promise.all([
+        supabase
+          .from("attendance_app")
+          .select("direction, server_ts")
+          .eq("profile_id", profile.id)
+          .gte("server_ts", dayStartUtc)
+          .order("server_ts"),
+        supabase
+          .from("attendance_days")
+          .select("status, late_minutes")
+          .eq("profile_id", profile.id)
+          .gte("work_date", monthStartIst),
+      ]);
+      if (p.data) setPunches(p.data as Punch[]);
+      if (d.data) {
+        setStats({
+          worked: d.data.filter((r) =>
+            ["VERIFIED", "APP_ONLY", "DEVICE_ONLY"].includes(r.status),
+          ).length,
+          late: d.data.filter((r) => r.late_minutes > 0).length,
+          absent: d.data.filter((r) => r.status === "ABSENT").length,
+        });
+      }
+    } catch {
+      // offline — keep whatever we have
+    }
+    setPending(pendingCount());
+  }, [profile.id]);
+
+  useEffect(() => {
+    drain().then(loadDay);
+  }, [loadDay]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await drain();
+    await loadDay();
+    setRefreshing(false);
+  };
+
+  // ---- pulse halo while live ----
   useEffect(() => {
     if (!enabled) return;
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: 1400, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1, duration: 1500, useNativeDriver: true }),
         Animated.timing(pulse, { toValue: 0, duration: 0, useNativeDriver: true }),
       ]),
     );
@@ -78,7 +132,7 @@ export default function HomeScreen({
     return () => loop.stop();
   }, [enabled, pulse]);
 
-  // watch GPS while the app is open
+  // ---- GPS watch ----
   useEffect(() => {
     let sub: Location.LocationSubscription | undefined;
     (async () => {
@@ -107,19 +161,13 @@ export default function HomeScreen({
     return () => sub?.remove();
   }, [branch]);
 
-  // drain the offline queue whenever the screen mounts
-  useEffect(() => {
-    setPending(pendingCount());
-    drain().then(() => setPending(pendingCount()));
-  }, []);
-
-  const showSuccess = (msg: string) => {
-    setSuccess(msg);
+  const showSuccess = (title: string, sub: string) => {
+    setSuccess({ title, sub });
     successAnim.setValue(0);
     Animated.sequence([
-      Animated.spring(successAnim, { toValue: 1, useNativeDriver: true, speed: 14, bounciness: 8 }),
-      Animated.delay(1600),
-      Animated.timing(successAnim, { toValue: 0, duration: 260, useNativeDriver: true }),
+      Animated.spring(successAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 9 }),
+      Animated.delay(1900),
+      Animated.timing(successAnim, { toValue: 0, duration: 280, useNativeDriver: true }),
     ]).start(() => setSuccess(null));
   };
 
@@ -161,21 +209,17 @@ export default function HomeScreen({
         flagReasons: [...spoof.reasons, ...(fence.via === "wifi" ? ["wifi_fallback"] : [])],
       });
 
-      const time = new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
-      await AsyncStorage.setItem(
-        LAST_DIRECTION_KEY,
-        `${new Date().toDateString()}|${direction}|${time}`,
-      );
-      setLastPunch(`${direction === "IN" ? "Checked in" : "Checked out"} at ${time}`);
-      setDirection(direction === "IN" ? "OUT" : "IN");
-      setPending(pendingCount());
       setCameraOpen(false);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      // optimistic timeline update; server refresh follows
+      setPunches((prev) => [...prev, { direction, server_ts: new Date().toISOString() }]);
       showSuccess(
+        direction === "IN" ? "Checked in" : "Checked out",
         queued
-          ? "Saved on phone — will send when internet returns"
-          : direction === "IN" ? "Checked in. Have a good day!" : "Checked out. See you tomorrow!",
+          ? "Saved on your phone — sends when internet returns"
+          : `at ${fmtClock(new Date())} · verified with selfie`,
       );
+      loadDay();
     } catch {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       setCameraOpen(false);
@@ -185,48 +229,79 @@ export default function HomeScreen({
     }
   };
 
-  const pulseScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.45] });
-  const pulseOpacity = pulse.interpolate({ inputRange: [0, 0.7, 1], outputRange: [0.35, 0.12, 0] });
-  const isOut = direction === "OUT";
+  const pulseScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.5] });
+  const pulseOpacity = pulse.interpolate({ inputRange: [0, 0.7, 1], outputRange: [0.3, 0.1, 0] });
+  const initials = profile.full_name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase();
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.greeting}>Hello, {profile.full_name.split(" ")[0]}</Text>
-          <Text style={styles.date}>
-            {new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}
+    <LinearGradient colors={gradients.screen} style={styles.root}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.brand} />
+        }
+      >
+        {/* header */}
+        <View style={styles.header}>
+          <View style={styles.headerLeft}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{initials}</Text>
+            </View>
+            <View>
+              <Text style={styles.greeting}>Hi, {profile.full_name.split(" ")[0]}</Text>
+              <Text style={styles.date}>
+                {now.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}
+              </Text>
+            </View>
+          </View>
+          <View
+            style={[
+              styles.fenceChip,
+              { borderColor: fence.inside ? "rgba(74,222,128,0.4)" : colors.cardBorder },
+            ]}
+          >
+            <View
+              style={[styles.fenceDot, { backgroundColor: fence.inside ? colors.good : colors.ink3 }]}
+            />
+            <Text style={[styles.fenceText, fence.inside && { color: colors.good }]}>
+              {fence.inside ? "At shop" : "Away"}
+            </Text>
+          </View>
+        </View>
+
+        {pending > 0 && (
+          <View style={styles.pendingBanner}>
+            <Text style={styles.pendingText}>
+              {pending} check-in{pending > 1 ? "s" : ""} waiting for internet — sends automatically
+            </Text>
+          </View>
+        )}
+        {blocked && (
+          <Pressable style={styles.blockedBanner} onPress={() => setBlocked(null)}>
+            <Text style={styles.blockedText}>{blocked}</Text>
+          </Pressable>
+        )}
+
+        {/* live clock */}
+        <View style={styles.clockWrap}>
+          <Text style={styles.clock}>{fmtClock(now)}</Text>
+          <Text style={styles.clockSub}>
+            {locGranted === false
+              ? "Allow location to check in at the shop"
+              : fence.inside
+                ? `You're at ${branch.name} — ready when you are`
+                : fence.distance !== null
+                  ? `${fence.distance} m from the shop`
+                  : "Finding your location…"}
           </Text>
         </View>
-        <View style={[styles.dot, { backgroundColor: fence.inside ? colors.good : colors.ink3 }]} />
-      </View>
 
-      {pending > 0 && (
-        <View style={styles.pendingBanner}>
-          <Text style={styles.pendingText}>
-            ⏳ {pending} check-in{pending > 1 ? "s" : ""} waiting for internet — will send automatically
-          </Text>
-        </View>
-      )}
-      {blocked && (
-        <Pressable style={styles.blockedBanner} onPress={() => setBlocked(null)}>
-          <Text style={styles.blockedText}>{blocked}</Text>
-        </Pressable>
-      )}
-
-      {lastPunch && (
-        <View style={[styles.statusCard, shadow.card]}>
-          <Text style={styles.statusLabel}>TODAY</Text>
-          <Text style={styles.statusValue}>{lastPunch}</Text>
-        </View>
-      )}
-
-      <View style={styles.center}>
+        {/* the button */}
         <View style={styles.buttonStack}>
           {enabled && (
             <Animated.View
               style={[
-                styles.pulseRing,
+                styles.halo,
                 { backgroundColor: isOut ? colors.out : colors.brand },
                 { opacity: pulseOpacity, transform: [{ scale: pulseScale }] },
               ]}
@@ -235,75 +310,117 @@ export default function HomeScreen({
           <Animated.View style={{ transform: [{ scale: press }] }}>
             <Pressable
               onPressIn={() =>
-                Animated.spring(press, { toValue: 0.94, useNativeDriver: true, speed: 30 }).start()
+                Animated.spring(press, { toValue: 0.93, useNativeDriver: true, speed: 30 }).start()
               }
               onPressOut={() =>
-                Animated.spring(press, { toValue: 1, useNativeDriver: true, speed: 20 }).start()
+                Animated.spring(press, { toValue: 1, useNativeDriver: true, speed: 18 }).start()
               }
               onPress={startCheckin}
               disabled={!enabled}
-              style={[
-                styles.bigButton,
-                shadow.button,
-                { backgroundColor: isOut ? colors.out : colors.brand },
-                !enabled && styles.bigButtonDisabled,
-              ]}
             >
-              <Text style={styles.bigButtonText}>{isOut ? "CHECK\nOUT" : "CHECK\nIN"}</Text>
+              <LinearGradient
+                colors={
+                  enabled
+                    ? (isOut ? gradients.checkout : gradients.checkin)
+                    : (["#232e48", "#1a2338"] as const)
+                }
+                style={[styles.bigButton, enabled && (isOut ? shadow.glowOrange : shadow.glowTeal)]}
+              >
+                <Text style={[styles.bigButtonText, !enabled && { color: colors.ink3 }]}>
+                  {isOut ? "CHECK\nOUT" : "CHECK\nIN"}
+                </Text>
+                <Text style={[styles.bigButtonSub, !enabled && { color: colors.ink3 }]}>
+                  {enabled ? "tap to take selfie" : "come closer to the shop"}
+                </Text>
+              </LinearGradient>
             </Pressable>
           </Animated.View>
         </View>
 
-        {locGranted === false && (
-          <Text style={styles.hint}>Please allow location — attendance only works at the shop.</Text>
-        )}
-        {locGranted && !fence.inside && (
-          <Text style={styles.hint}>
-            {fence.distance !== null
-              ? `You are ${fence.distance} m from the shop.\nCome closer to check in.`
-              : "Finding your location…"}
-          </Text>
-        )}
-        {fence.inside && (
-          <Text style={[styles.hint, styles.hintOk]}>
-            ✓ You are at the shop{fence.via === "wifi" ? " (shop Wi-Fi)" : ""}
-          </Text>
-        )}
-      </View>
+        {/* today timeline */}
+        <View style={[styles.cardBlock, shadow.card]}>
+          <Text style={styles.cardTitle}>TODAY</Text>
+          {punches.length === 0 ? (
+            <Text style={styles.emptyText}>No punches yet — your day starts here.</Text>
+          ) : (
+            punches.map((p, i) => (
+              <View key={i} style={styles.timelineRow}>
+                <View style={styles.timelineRail}>
+                  <View
+                    style={[
+                      styles.timelineDot,
+                      { backgroundColor: p.direction === "IN" ? colors.brand : colors.out },
+                    ]}
+                  />
+                  {i < punches.length - 1 && <View style={styles.timelineLine} />}
+                </View>
+                <Text style={styles.timelineLabel}>
+                  {p.direction === "IN" ? "Checked in" : "Checked out"}
+                </Text>
+                <Text style={styles.timelineTime}>{fmtPunch(p.server_ts)}</Text>
+              </View>
+            ))
+          )}
+        </View>
 
-      <TouchableOpacity onPress={() => supabase.auth.signOut()}>
-        <Text style={styles.logout}>Log out</Text>
-      </TouchableOpacity>
-
-      {/* success overlay */}
-      {success && (
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            styles.successWrap,
-            {
-              opacity: successAnim,
-              transform: [{
-                scale: successAnim.interpolate({ inputRange: [0, 1], outputRange: [0.8, 1] }),
-              }],
-            },
-          ]}
-        >
-          <View style={[styles.successCard, shadow.card]}>
-            <View style={styles.successCircle}>
-              <Text style={styles.successTick}>✓</Text>
+        {/* month stats */}
+        {stats && (
+          <View style={styles.statsRow}>
+            <View style={[styles.statChip, shadow.card]}>
+              <Text style={[styles.statValue, { color: colors.good }]}>{stats.worked}</Text>
+              <Text style={styles.statLabel}>days worked</Text>
             </View>
-            <Text style={styles.successText}>{success}</Text>
+            <View style={[styles.statChip, shadow.card]}>
+              <Text style={[styles.statValue, { color: colors.warn }]}>{stats.late}</Text>
+              <Text style={styles.statLabel}>late days</Text>
+            </View>
+            <View style={[styles.statChip, shadow.card]}>
+              <Text style={[styles.statValue, { color: colors.serious }]}>{stats.absent}</Text>
+              <Text style={styles.statLabel}>absent</Text>
+            </View>
           </View>
+        )}
+
+        <TouchableOpacity onPress={() => supabase.auth.signOut()}>
+          <Text style={styles.logout}>Log out</Text>
+        </TouchableOpacity>
+      </ScrollView>
+
+      {/* success takeover */}
+      {success && (
+        <Animated.View style={[styles.successWrap, { opacity: successAnim }]} pointerEvents="none">
+          <LinearGradient colors={gradients.success} style={styles.successFill}>
+            <Animated.View
+              style={{
+                alignItems: "center",
+                transform: [{
+                  scale: successAnim.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1] }),
+                }],
+              }}
+            >
+              <View style={[styles.successCircle, shadow.glowTeal]}>
+                <Text style={styles.successTick}>✓</Text>
+              </View>
+              <Text style={styles.successTitle}>{success.title}</Text>
+              <Text style={styles.successSub}>{success.sub}</Text>
+            </Animated.View>
+          </LinearGradient>
         </Animated.View>
       )}
 
+      {/* camera */}
       <Modal visible={cameraOpen} animationType="slide">
         <View style={styles.cameraContainer}>
           <View style={styles.cameraTop}>
-            <Text style={styles.cameraHint}>Take a clear selfie to confirm it's you</Text>
+            <Text style={styles.cameraTitle}>
+              {isOut ? "Checking out" : "Checking in"} · {fmtClock(now)}
+            </Text>
+            <Text style={styles.cameraHint}>Keep your face inside the circle</Text>
           </View>
-          <CameraView ref={cameraRef} style={styles.camera} facing="front" />
+          <View style={styles.cameraFrame}>
+            <CameraView ref={cameraRef} style={styles.camera} facing="front" />
+            <View pointerEvents="none" style={styles.faceGuide} />
+          </View>
           <View style={styles.cameraControls}>
             <TouchableOpacity
               style={styles.cancelButton}
@@ -313,152 +430,191 @@ export default function HomeScreen({
               <Text style={styles.cancelText}>Cancel</Text>
             </TouchableOpacity>
             <Pressable
-              style={({ pressed }) => [styles.shutter, pressed && { transform: [{ scale: 0.92 }] }]}
+              style={({ pressed }) => [styles.shutter, pressed && { transform: [{ scale: 0.9 }] }]}
               onPress={capture}
               disabled={busy}
             >
               {busy
-                ? <ActivityIndicator color={colors.brand} />
+                ? <ActivityIndicator color={colors.brandDeep} />
                 : <View style={styles.shutterInner} />}
             </Pressable>
-            <View style={{ width: 80 }} />
+            <View style={{ width: 76 }} />
           </View>
         </View>
       </Modal>
-    </View>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.bg, padding: 22, paddingTop: 64 },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
-  greeting: { fontSize: 26, fontWeight: "800", color: colors.ink, letterSpacing: -0.4 },
-  date: { fontSize: 15, color: colors.ink3, marginTop: 3 },
-  dot: { width: 12, height: 12, borderRadius: 6, marginTop: 10 },
+  root: { flex: 1 },
+  scroll: { padding: 22, paddingTop: 62, paddingBottom: 30 },
+
+  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  headerLeft: { flexDirection: "row", alignItems: "center", gap: 12 },
+  avatar: {
+    width: 46,
+    height: 46,
+    borderRadius: 15,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarText: { color: colors.brand, fontWeight: "800", fontSize: 16 },
+  greeting: { color: colors.ink, fontSize: 19, fontWeight: "800", letterSpacing: -0.3 },
+  date: { color: colors.ink3, fontSize: 13, marginTop: 1 },
+  fenceChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    borderWidth: 1,
+    borderRadius: radius.pill,
+    paddingVertical: 6,
+    paddingHorizontal: 11,
+    backgroundColor: colors.card,
+  },
+  fenceDot: { width: 7, height: 7, borderRadius: 4 },
+  fenceText: { color: colors.ink3, fontSize: 12.5, fontWeight: "600" },
 
   pendingBanner: {
-    backgroundColor: colors.warnBg,
-    borderRadius: radius.md,
-    padding: 13,
-    marginTop: 18,
+    backgroundColor: "rgba(251,191,36,0.09)",
     borderWidth: 1,
-    borderColor: "#fde8c0",
+    borderColor: "rgba(251,191,36,0.25)",
+    borderRadius: radius.md,
+    padding: 12,
+    marginTop: 18,
   },
-  pendingText: { color: colors.warn, fontSize: 14, textAlign: "center", fontWeight: "500" },
+  pendingText: { color: colors.warn, fontSize: 13.5, textAlign: "center", fontWeight: "500" },
   blockedBanner: {
-    backgroundColor: colors.seriousBg,
+    backgroundColor: "rgba(248,113,113,0.09)",
+    borderWidth: 1,
+    borderColor: "rgba(248,113,113,0.28)",
     borderRadius: radius.md,
-    padding: 13,
-    marginTop: 18,
-    borderWidth: 1,
-    borderColor: "#fde3e1",
-  },
-  blockedText: { color: colors.serious, fontSize: 14, textAlign: "center", fontWeight: "500" },
-
-  statusCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.line,
-    padding: 18,
+    padding: 12,
     marginTop: 18,
   },
-  statusLabel: { fontSize: 11.5, fontWeight: "700", color: colors.ink3, letterSpacing: 1 },
-  statusValue: { fontSize: 17, fontWeight: "600", color: colors.ink, marginTop: 3 },
+  blockedText: { color: colors.serious, fontSize: 13.5, textAlign: "center", fontWeight: "500" },
 
-  center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  buttonStack: { width: 250, height: 250, alignItems: "center", justifyContent: "center" },
-  pulseRing: {
-    position: "absolute",
-    width: 220,
-    height: 220,
-    borderRadius: 110,
+  clockWrap: { alignItems: "center", marginTop: 34 },
+  clock: {
+    color: colors.ink,
+    fontSize: 54,
+    fontWeight: "800",
+    letterSpacing: -1,
+    fontVariant: ["tabular-nums"],
   },
-  bigButton: {
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    justifyContent: "center",
+  clockSub: { color: colors.ink2, fontSize: 14.5, marginTop: 4, textAlign: "center" },
+
+  buttonStack: {
     alignItems: "center",
+    justifyContent: "center",
+    marginVertical: 34,
+    height: 236,
   },
-  bigButtonDisabled: {
-    backgroundColor: "#c3ccd4",
-    shadowOpacity: 0,
-    elevation: 0,
+  halo: { position: "absolute", width: 216, height: 216, borderRadius: 108 },
+  bigButton: {
+    width: 216,
+    height: 216,
+    borderRadius: 108,
+    alignItems: "center",
+    justifyContent: "center",
   },
   bigButtonText: {
     color: "#fff",
-    fontSize: 32,
+    fontSize: 31,
     fontWeight: "800",
     textAlign: "center",
-    lineHeight: 40,
-    letterSpacing: 0.5,
+    lineHeight: 38,
+    letterSpacing: 1,
   },
-  hint: {
-    fontSize: 16,
-    color: colors.ink2,
-    textAlign: "center",
-    marginTop: 26,
-    paddingHorizontal: 12,
-    lineHeight: 23,
-  },
-  hintOk: { color: colors.good, fontWeight: "600" },
-  logout: { textAlign: "center", color: colors.ink3, fontSize: 14, padding: 10 },
+  bigButtonSub: { color: "rgba(255,255,255,0.75)", fontSize: 12.5, marginTop: 8, fontWeight: "600" },
 
-  successWrap: {
-    position: "absolute",
-    top: 0, left: 0, right: 0, bottom: 0,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  successCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    paddingVertical: 28,
-    paddingHorizontal: 30,
-    alignItems: "center",
-    maxWidth: 300,
+  cardBlock: {
+    backgroundColor: colors.card,
     borderWidth: 1,
-    borderColor: colors.line,
+    borderColor: colors.cardBorder,
+    borderRadius: radius.lg,
+    padding: 20,
   },
+  cardTitle: { color: colors.ink3, fontSize: 11.5, fontWeight: "800", letterSpacing: 1.4, marginBottom: 12 },
+  emptyText: { color: colors.ink2, fontSize: 14.5 },
+  timelineRow: { flexDirection: "row", alignItems: "flex-start", minHeight: 34 },
+  timelineRail: { width: 20, alignItems: "center" },
+  timelineDot: { width: 10, height: 10, borderRadius: 5, marginTop: 4 },
+  timelineLine: { flex: 1, width: 2, backgroundColor: colors.cardBorder, marginVertical: 3 },
+  timelineLabel: { color: colors.ink, fontSize: 15, fontWeight: "600", flex: 1, marginLeft: 8 },
+  timelineTime: { color: colors.ink2, fontSize: 14, fontVariant: ["tabular-nums"] },
+
+  statsRow: { flexDirection: "row", gap: 10, marginTop: 14 },
+  statChip: {
+    flex: 1,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    borderRadius: radius.md,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  statValue: { fontSize: 22, fontWeight: "800", fontVariant: ["tabular-nums"] },
+  statLabel: { color: colors.ink3, fontSize: 11.5, marginTop: 2, fontWeight: "600" },
+
+  logout: { textAlign: "center", color: colors.ink3, fontSize: 13.5, padding: 16, marginTop: 6 },
+
+  successWrap: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 },
+  successFill: { flex: 1, alignItems: "center", justifyContent: "center" },
   successCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: colors.goodBg,
+    width: 92,
+    height: 92,
+    borderRadius: 46,
+    backgroundColor: colors.brandDeep,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 14,
+    marginBottom: 20,
   },
-  successTick: { fontSize: 32, color: colors.good, fontWeight: "800" },
-  successText: { fontSize: 16, fontWeight: "600", color: colors.ink, textAlign: "center" },
+  successTick: { fontSize: 44, color: "#fff", fontWeight: "800" },
+  successTitle: { color: colors.ink, fontSize: 26, fontWeight: "800", letterSpacing: -0.4 },
+  successSub: { color: colors.ink2, fontSize: 15, marginTop: 6, textAlign: "center", paddingHorizontal: 30 },
 
-  cameraContainer: { flex: 1, backgroundColor: "#000" },
-  cameraTop: { paddingTop: 64, paddingBottom: 16, alignItems: "center" },
-  cameraHint: { color: "#fff", fontSize: 16, fontWeight: "500" },
-  camera: { flex: 1, borderRadius: 24, overflow: "hidden", marginHorizontal: 14 },
+  cameraContainer: { flex: 1, backgroundColor: colors.bg },
+  cameraTop: { paddingTop: 62, paddingBottom: 18, alignItems: "center" },
+  cameraTitle: { color: colors.ink, fontSize: 17, fontWeight: "700" },
+  cameraHint: { color: colors.ink2, fontSize: 13.5, marginTop: 3 },
+  cameraFrame: { flex: 1, marginHorizontal: 16, borderRadius: radius.xl, overflow: "hidden" },
+  camera: { flex: 1 },
+  faceGuide: {
+    position: "absolute",
+    top: "14%",
+    alignSelf: "center",
+    width: 240,
+    height: 300,
+    borderRadius: 150,
+    borderWidth: 2.5,
+    borderColor: "rgba(255,255,255,0.55)",
+    borderStyle: "dashed",
+  },
   cameraControls: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    padding: 26,
+    padding: 24,
   },
-  cancelButton: { width: 80 },
-  cancelText: { color: "#fff", fontSize: 17 },
+  cancelButton: { width: 76 },
+  cancelText: { color: colors.ink2, fontSize: 16 },
   shutter: {
-    width: 78,
-    height: 78,
-    borderRadius: 39,
+    width: 76,
+    height: 76,
+    borderRadius: 38,
     backgroundColor: "#fff",
-    justifyContent: "center",
     alignItems: "center",
+    justifyContent: "center",
   },
   shutterInner: {
-    width: 62,
-    height: 62,
-    borderRadius: 31,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     borderWidth: 4,
-    borderColor: colors.brand,
+    borderColor: colors.brandDeep,
   },
-  logoutHidden: { display: "none" },
 });

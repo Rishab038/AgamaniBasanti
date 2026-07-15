@@ -50,7 +50,8 @@ export default function App() {
   if (!ready || (session && (!profile || !branch))) {
     return (
       <View style={styles.loading}>
-        <ActivityIndicator size="large" color="#16a085" />
+        <StatusBar style="light" />
+        <ActivityIndicator size="large" color="#2dd4bf" />
         {session && profile && !branch && (
           <Text style={styles.warn}>
             Your profile has no shop assigned yet. Please ask the owner.
@@ -62,7 +63,7 @@ export default function App() {
 
   return (
     <>
-      <StatusBar style="dark" />
+      <StatusBar style="light" />
       {session && profile && branch ? (
         <HomeScreen profile={profile} branch={branch} />
       ) : (
@@ -73,6 +74,12 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  loading: { flex: 1, justifyContent: "center", alignItems: "center", padding: 24 },
-  warn: { marginTop: 16, fontSize: 16, color: "#666", textAlign: "center" },
+  loading: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+    backgroundColor: "#0c1222",
+  },
+  warn: { marginTop: 16, fontSize: 16, color: "#a6b4c8", textAlign: "center" },
 });

@@ -1,22 +1,25 @@
-// One-time login: employee code + 6-digit PIN. The owner creates
-// each account; code+PIN map to a Supabase email/password under the
-// hood. The session persists — workers see this screen exactly once.
+// One-time login: employee code + 6-digit PIN entered into PIN
+// boxes (auto-submits on the 6th digit). Code+PIN map to a Supabase
+// email/password under the hood; the session persists so workers
+// see this screen exactly once.
 
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   View,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import * as Haptics from "expo-haptics";
 import { supabase } from "../lib/supabase";
-import { colors, radius, shadow } from "../lib/theme";
+import { colors, gradients, radius, shadow } from "../lib/theme";
 
 const codeToEmail = (code: string) =>
   `${code.trim().toLowerCase()}@staff.agamani.app`;
@@ -26,146 +29,186 @@ export default function LoginScreen() {
   const [pin, setPin] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const pinRef = useRef<TextInput>(null);
   const rise = useRef(new Animated.Value(0)).current;
+  const shake = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Animated.timing(rise, { toValue: 1, duration: 450, useNativeDriver: true }).start();
+    Animated.timing(rise, { toValue: 1, duration: 500, useNativeDriver: true }).start();
   }, [rise]);
 
-  const login = async () => {
+  const runShake = () => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    shake.setValue(0);
+    Animated.sequence([
+      Animated.timing(shake, { toValue: 1, duration: 60, useNativeDriver: true }),
+      Animated.timing(shake, { toValue: -1, duration: 60, useNativeDriver: true }),
+      Animated.timing(shake, { toValue: 1, duration: 60, useNativeDriver: true }),
+      Animated.timing(shake, { toValue: 0, duration: 60, useNativeDriver: true }),
+    ]).start();
+  };
+
+  const login = async (fullPin: string) => {
+    if (busy) return;
     setBusy(true);
     setError(null);
+    Keyboard.dismiss();
     const { error: err } = await supabase.auth.signInWithPassword({
       email: codeToEmail(code),
-      password: pin,
+      password: fullPin,
     });
-    if (err) setError(`Could not log in: ${err.message}`);
+    if (err) {
+      setPin("");
+      setError(
+        err.message.includes("Invalid")
+          ? "That code and PIN don't match. Try again or ask the owner."
+          : `Could not log in: ${err.message}`,
+      );
+      runShake();
+    } else {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
     setBusy(false);
   };
 
-  return (
-    <View style={styles.root}>
-      <LinearGradient
-        colors={[colors.brandDeep, colors.brandDark, colors.brand]}
-        style={styles.hero}
-      >
-        <Text style={styles.heroMark}>অ</Text>
-        <Text style={styles.heroTitle}>Agamani Basanti</Text>
-        <Text style={styles.heroSub}>Staff attendance</Text>
-      </LinearGradient>
+  const onPinChange = (v: string) => {
+    const digits = v.replace(/\D/g, "").slice(0, 6);
+    setPin(digits);
+    if (digits.length === 6 && code.trim()) login(digits);
+  };
 
+  return (
+    <LinearGradient colors={gradients.screen} style={styles.root}>
       <KeyboardAvoidingView
-        style={styles.body}
+        style={styles.flex}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <Animated.View
           style={[
-            styles.card,
-            shadow.card,
+            styles.inner,
             {
               opacity: rise,
-              transform: [{
-                translateY: rise.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }),
-              }],
+              transform: [
+                { translateY: rise.interpolate({ inputRange: [0, 1], outputRange: [28, 0] }) },
+                { translateX: shake.interpolate({ inputRange: [-1, 1], outputRange: [-8, 8] }) },
+              ],
             },
           ]}
         >
-          <Text style={styles.label}>Employee code</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="e.g. W07"
-            placeholderTextColor={colors.ink3}
-            autoCapitalize="characters"
-            autoCorrect={false}
-            value={code}
-            onChangeText={setCode}
-          />
-          <Text style={styles.label}>PIN</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="6 digits"
-            placeholderTextColor={colors.ink3}
-            keyboardType="number-pad"
-            secureTextEntry
-            maxLength={6}
-            value={pin}
-            onChangeText={setPin}
-          />
+          <View style={[styles.mark, shadow.glowTeal]}>
+            <Text style={styles.markText}>অ</Text>
+          </View>
+          <Text style={styles.title}>Agamani Basanti</Text>
+          <Text style={styles.sub}>Your attendance, your salary — in your pocket</Text>
 
-          {error && <Text style={styles.error}>{error}</Text>}
+          <View style={[styles.card, shadow.card]}>
+            <Text style={styles.label}>EMPLOYEE CODE</Text>
+            <TextInput
+              style={styles.codeInput}
+              placeholder="W07"
+              placeholderTextColor={colors.ink3}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              value={code}
+              onChangeText={(v) => setCode(v.toUpperCase())}
+              returnKeyType="next"
+              onSubmitEditing={() => pinRef.current?.focus()}
+            />
 
-          <TouchableOpacity
-            style={[styles.button, (busy || !code || pin.length < 6) && styles.buttonDisabled]}
-            onPress={login}
-            disabled={busy || !code || pin.length < 6}
-            activeOpacity={0.85}
-          >
-            {busy ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.buttonText}>Log in</Text>
-            )}
-          </TouchableOpacity>
-          <Text style={styles.help}>
-            Don't have a code? Ask the shop owner.
-          </Text>
+            <Text style={[styles.label, { marginTop: 22 }]}>PIN</Text>
+            <Pressable onPress={() => pinRef.current?.focus()} style={styles.pinRow}>
+              {Array.from({ length: 6 }).map((_, i) => (
+                <View
+                  key={i}
+                  style={[
+                    styles.pinBox,
+                    pin.length === i && styles.pinBoxActive,
+                    pin.length > i && styles.pinBoxFilled,
+                  ]}
+                >
+                  {pin.length > i && <View style={styles.pinDot} />}
+                </View>
+              ))}
+            </Pressable>
+            {/* hidden real input drives the boxes */}
+            <TextInput
+              ref={pinRef}
+              style={styles.hiddenInput}
+              keyboardType="number-pad"
+              value={pin}
+              onChangeText={onPinChange}
+              maxLength={6}
+            />
+
+            {busy && <ActivityIndicator color={colors.brand} style={{ marginTop: 18 }} />}
+            {error && <Text style={styles.error}>{error}</Text>}
+          </View>
+
+          <Text style={styles.help}>No code yet? Ask the shop owner to add you.</Text>
         </Animated.View>
       </KeyboardAvoidingView>
-    </View>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
-  hero: {
-    paddingTop: 90,
-    paddingBottom: 64,
-    alignItems: "center",
-    borderBottomLeftRadius: 32,
-    borderBottomRightRadius: 32,
-  },
-  heroMark: {
-    fontSize: 40,
-    color: "#fff",
-    fontWeight: "800",
-    width: 76,
-    height: 76,
-    lineHeight: 74,
-    textAlign: "center",
-    backgroundColor: "rgba(255,255,255,0.14)",
+  root: { flex: 1 },
+  flex: { flex: 1 },
+  inner: { flex: 1, justifyContent: "center", padding: 26 },
+  mark: {
+    width: 72,
+    height: 72,
     borderRadius: 22,
-    overflow: "hidden",
-    marginBottom: 14,
+    backgroundColor: colors.brandDeep,
+    alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "center",
+    marginBottom: 18,
   },
-  heroTitle: { color: "#fff", fontSize: 26, fontWeight: "800", letterSpacing: -0.5 },
-  heroSub: { color: "rgba(255,255,255,0.75)", fontSize: 15, marginTop: 2 },
-  body: { flex: 1, padding: 20, marginTop: -36 },
+  markText: { fontSize: 34, color: "#fff", fontWeight: "800" },
+  title: {
+    color: colors.ink,
+    fontSize: 28,
+    fontWeight: "800",
+    textAlign: "center",
+    letterSpacing: -0.5,
+  },
+  sub: { color: colors.ink2, fontSize: 14.5, textAlign: "center", marginTop: 6, marginBottom: 30 },
   card: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
     borderRadius: radius.lg,
     padding: 24,
-    borderWidth: 1,
-    borderColor: colors.line,
   },
-  label: { fontSize: 13, fontWeight: "600", color: colors.ink2, marginBottom: 6, marginTop: 10 },
-  input: {
+  label: { color: colors.ink3, fontSize: 12, fontWeight: "700", letterSpacing: 1.2 },
+  codeInput: {
+    marginTop: 8,
     borderWidth: 1.5,
-    borderColor: colors.line,
+    borderColor: colors.cardBorder,
     borderRadius: radius.md,
+    backgroundColor: "rgba(255,255,255,0.04)",
     padding: 15,
-    fontSize: 18,
+    fontSize: 20,
+    fontWeight: "700",
+    letterSpacing: 2,
     color: colors.ink,
-    backgroundColor: colors.surface,
   },
-  error: { color: colors.serious, fontSize: 14, marginTop: 12, textAlign: "center" },
-  button: {
-    backgroundColor: colors.brand,
+  pinRow: { flexDirection: "row", gap: 10, marginTop: 10 },
+  pinBox: {
+    flex: 1,
+    height: 56,
     borderRadius: radius.md,
-    padding: 17,
+    borderWidth: 1.5,
+    borderColor: colors.cardBorder,
+    backgroundColor: "rgba(255,255,255,0.04)",
     alignItems: "center",
-    marginTop: 20,
+    justifyContent: "center",
   },
-  buttonDisabled: { backgroundColor: "#b9c4cc" },
-  buttonText: { color: "#fff", fontSize: 17, fontWeight: "700" },
-  help: { textAlign: "center", color: colors.ink3, fontSize: 13, marginTop: 16 },
+  pinBoxActive: { borderColor: colors.brand },
+  pinBoxFilled: { borderColor: colors.brandDeep },
+  pinDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: colors.brand },
+  hiddenInput: { position: "absolute", opacity: 0, height: 1, width: 1 },
+  error: { color: colors.serious, fontSize: 14, marginTop: 18, textAlign: "center", lineHeight: 20 },
+  help: { color: colors.ink3, fontSize: 13, textAlign: "center", marginTop: 22 },
 });
