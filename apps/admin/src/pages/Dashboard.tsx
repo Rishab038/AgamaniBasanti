@@ -1,72 +1,100 @@
-// "Today" board — the owner's landing page. KPI tiles up top,
-// live attendance below, and banners for the two things that must
-// never be silent: a stale fingerprint machine and punches needing
-// attention. Status always reads as dot + label, never color alone.
+// "Today at the shop" — the owner's landing page. Three counts up
+// top, a live table cross-checking app check-ins against the
+// fingerprint machine, and advance requests answerable in one click.
 
 import { useEffect, useState } from "react";
-import {
-  AlertTriangle,
-  CalendarX2,
-  Clock4,
-  UserCheck,
-  Wallet,
-  WifiOff,
-} from "lucide-react";
+import { WifiOff } from "lucide-react";
 import { supabase } from "../lib/supabase";
 
 type DayRow = {
   id: string;
+  profile_id: string;
   status: string;
-  first_in: string | null;
-  last_out: string | null;
   late_minutes: number;
-  profiles: { full_name: string; employee_code: string } | null;
+  profiles: { full_name: string; employee_code: string; device_enroll_no: number | null } | null;
 };
 
-type Device = { serial: string; model: string | null; last_seen_at: string | null };
+type Device = { serial: string; last_seen_at: string | null };
 
-const STATUS_META: Record<string, { label: string; tone: string }> = {
-  VERIFIED: { label: "Present · verified", tone: "good" },
-  APP_ONLY: { label: "App only — no fingerprint", tone: "warn" },
-  DEVICE_ONLY: { label: "Fingerprint only — no app", tone: "warn" },
-  ABSENT: { label: "Absent", tone: "serious" },
-  LEAVE_PAID: { label: "Paid leave", tone: "info" },
-  LEAVE_UNPAID: { label: "Unpaid leave", tone: "info" },
-  HOLIDAY: { label: "Holiday", tone: "neutral" },
-  OFF_DAY: { label: "Weekly off", tone: "neutral" },
+type PendingAdvance = {
+  id: string;
+  profile_id: string;
+  amount: number;
+  reason: string | null;
+  profiles: { full_name: string } | null;
 };
 
-const fmtTime = (ts: string | null) =>
-  ts ? new Date(ts).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "—";
+const istToday = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+const fmtTime = (ts: string | null | undefined) =>
+  ts
+    ? new Date(ts).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true })
+    : null;
+const rupees = (n: number) => `₹${Number(n).toLocaleString("en-IN")}`;
 
 export default function Dashboard() {
   const [rows, setRows] = useState<DayRow[]>([]);
+  const [appFirst, setAppFirst] = useState<Record<string, string>>({});
+  const [devFirst, setDevFirst] = useState<Record<number, string>>({});
   const [devices, setDevices] = useState<Device[]>([]);
-  const [pendingAdvances, setPendingAdvances] = useState(0);
-  const [staffCount, setStaffCount] = useState(0);
+  const [advances, setAdvances] = useState<PendingAdvance[]>([]);
+  const [balances, setBalances] = useState<Record<string, number>>({});
+  const [dismissed, setDismissed] = useState<string[]>(
+    () => JSON.parse(sessionStorage.getItem("dismissedAdvances") ?? "[]"),
+  );
+  const [error, setError] = useState<string | null>(null);
+  const [now, setNow] = useState(new Date());
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 30000);
+    return () => clearInterval(t);
+  }, []);
 
   const load = async () => {
-    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-    const [att, dev, adv, staff] = await Promise.all([
+    const today = istToday();
+    const dayStartUtc = new Date(`${today}T00:00:00+05:30`).toISOString();
+    const [att, app, dev, devs, adv, bal] = await Promise.all([
       supabase
         .from("attendance_days")
         .select(
-          "id, status, first_in, last_out, late_minutes, profiles!attendance_days_profile_id_fkey(full_name, employee_code)",
+          "id, profile_id, status, late_minutes, profiles!attendance_days_profile_id_fkey(full_name, employee_code, device_enroll_no)",
         )
         .eq("work_date", today)
         .order("status"),
-      supabase.from("devices").select("serial, model, last_seen_at"),
-      supabase.from("advances").select("id", { count: "exact", head: true }).eq("status", "PENDING"),
       supabase
-        .from("profiles").select("id", { count: "exact", head: true })
-        .eq("role", "worker").eq("active", true),
+        .from("attendance_app")
+        .select("profile_id, server_ts")
+        .gte("server_ts", dayStartUtc)
+        .order("server_ts"),
+      supabase
+        .from("device_punches")
+        .select("enroll_no, punched_at")
+        .gte("punched_at", dayStartUtc)
+        .order("punched_at"),
+      supabase.from("devices").select("serial, last_seen_at"),
+      supabase
+        .from("advances")
+        .select("id, profile_id, amount, reason, profiles(full_name)")
+        .eq("status", "PENDING")
+        .order("created_at"),
+      supabase.from("advance_balances").select("profile_id, balance"),
     ]);
-    if (att.error) console.error("attendance query failed:", att.error);
-    if (dev.error) console.error("devices query failed:", dev.error);
+    if (att.error) setError(att.error.message);
     setRows((att.data as unknown as DayRow[]) ?? []);
-    setDevices(dev.data ?? []);
-    setPendingAdvances(adv.count ?? 0);
-    setStaffCount(staff.count ?? 0);
+
+    const af: Record<string, string> = {};
+    for (const p of app.data ?? []) if (!af[p.profile_id]) af[p.profile_id] = p.server_ts;
+    setAppFirst(af);
+    const df: Record<number, string> = {};
+    for (const p of dev.data ?? []) if (!df[p.enroll_no]) df[p.enroll_no] = p.punched_at;
+    setDevFirst(df);
+
+    setDevices(devs.data ?? []);
+    setAdvances((adv.data as unknown as PendingAdvance[]) ?? []);
+    const b: Record<string, number> = {};
+    for (const r of bal.data ?? []) {
+      b[r.profile_id] = (b[r.profile_id] ?? 0) + Number(r.balance);
+    }
+    setBalances(b);
   };
 
   useEffect(() => {
@@ -80,56 +108,77 @@ export default function Dashboard() {
     };
   }, []);
 
+  const decideAdvance = async (a: PendingAdvance, approve: boolean) => {
+    if (!approve) {
+      // "Not now" just tucks it away for this session; it stays in Approvals
+      const next = [...dismissed, a.id];
+      setDismissed(next);
+      sessionStorage.setItem("dismissedAdvances", JSON.stringify(next));
+      return;
+    }
+    const { data: me } = await supabase.auth.getUser();
+    const { error: err } = await supabase
+      .from("advances")
+      .update({ status: "APPROVED", decided_by: me.user?.id, decided_at: new Date().toISOString() })
+      .eq("id", a.id);
+    if (err) setError(err.message);
+    else await load();
+  };
+
   const staleDevices = devices.filter(
     (d) => !d.last_seen_at || Date.now() - new Date(d.last_seen_at).getTime() > 2 * 3600 * 1000,
   );
-  const present = rows.filter((r) => r.status === "VERIFIED").length;
-  const needsAttention = rows.filter((r) => r.status === "APP_ONLY" || r.status === "DEVICE_ONLY");
+  const verified = rows.filter((r) => r.status === "VERIFIED").length;
   const late = rows.filter((r) => r.late_minutes > 0).length;
   const absent = rows.filter((r) => r.status === "ABSENT").length;
+  const visibleAdvances = advances.filter((a) => !dismissed.includes(a.id));
+
+  const statusPill = (r: DayRow) => {
+    if (r.status === "APP_ONLY" || r.status === "DEVICE_ONLY")
+      return <span className="pill serious">Check this</span>;
+    if (r.status === "ABSENT") return <span className="pill serious">Absent</span>;
+    if (r.late_minutes > 0) return <span className="pill warn">Late</span>;
+    if (r.status === "VERIFIED") return <span className="pill good">Verified ✓</span>;
+    if (r.status === "LEAVE_PAID" || r.status === "LEAVE_UNPAID")
+      return <span className="pill neutral">On leave</span>;
+    return <span className="pill neutral">{r.status === "HOLIDAY" ? "Holiday" : "Weekly off"}</span>;
+  };
 
   return (
     <div>
       <div className="page-head">
-        <h1>Today</h1>
-        <p>
-          {new Date().toLocaleDateString("en-IN", {
-            weekday: "long", day: "numeric", month: "long", timeZone: "Asia/Kolkata",
+        <h1>Today at the shop</h1>
+        <span className="when">
+          {now.toLocaleDateString("en-IN", {
+            weekday: "short", day: "numeric", month: "short", timeZone: "Asia/Kolkata",
           })}
-          {" · "}{staffCount} active staff
-        </p>
+          {" · "}
+          {now.toLocaleTimeString("en-IN", {
+            hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata",
+          })}
+        </span>
       </div>
 
+      {error && <div className="banner error" onClick={() => setError(null)}>{error}</div>}
       {staleDevices.length > 0 && (
         <div className="banner warn">
           <WifiOff />
-          Fingerprint machine {staleDevices.map((d) => d.serial).join(", ")} has not synced for
-          over 2 hours — check the machine's internet.
-        </div>
-      )}
-      {pendingAdvances > 0 && (
-        <div className="banner info">
-          <Wallet />
-          {pendingAdvances} advance request{pendingAdvances > 1 ? "s" : ""} waiting for your approval.
+          The fingerprint machine hasn't synced for over 2 hours — check its internet.
         </div>
       )}
 
       <div className="stats">
         <div className="stat good">
-          <div className="label"><UserCheck /> Present</div>
-          <div className="value">{present}</div>
+          <div className="value">{verified}</div>
+          <div className="label">Checked in ✓ verified</div>
         </div>
-        <div className="stat warn">
-          <div className="label"><AlertTriangle /> Needs attention</div>
-          <div className="value">{needsAttention.length}</div>
-        </div>
-        <div className="stat info">
-          <div className="label"><Clock4 /> Late arrivals</div>
+        <div className="stat amber">
           <div className="value">{late}</div>
+          <div className="label">Late today</div>
         </div>
-        <div className="stat serious">
-          <div className="label"><CalendarX2 /> Absent</div>
+        <div className="stat rose">
           <div className="value">{absent}</div>
+          <div className="label">Absent</div>
         </div>
       </div>
 
@@ -137,37 +186,54 @@ export default function Dashboard() {
         <thead>
           <tr>
             <th>Staff</th>
+            <th>App check-in</th>
+            <th>Fingerprint</th>
             <th>Status</th>
-            <th>In</th>
-            <th>Out</th>
-            <th>Late</th>
           </tr>
         </thead>
         <tbody>
           {rows.length === 0 && (
             <tr>
-              <td colSpan={5} className="empty-cell">
-                No attendance yet today — punches appear here live as staff check in.
+              <td colSpan={4} className="empty-cell">
+                Nothing yet — staff appear here the moment they check in.
               </td>
             </tr>
           )}
           {rows.map((r) => {
-            const meta = STATUS_META[r.status] ?? { label: r.status, tone: "neutral" };
+            const appTime = fmtTime(appFirst[r.profile_id]);
+            const devTime =
+              r.profiles?.device_enroll_no != null
+                ? fmtTime(devFirst[r.profiles.device_enroll_no])
+                : null;
             return (
               <tr key={r.id}>
-                <td>
-                  <strong>{r.profiles?.full_name}</strong>{" "}
-                  <span className="muted">({r.profiles?.employee_code})</span>
-                </td>
-                <td><span className={`pill ${meta.tone}`}>{meta.label}</span></td>
-                <td>{fmtTime(r.first_in)}</td>
-                <td>{fmtTime(r.last_out)}</td>
-                <td>{r.late_minutes > 0 ? `${r.late_minutes} min` : "—"}</td>
+                <td><strong>{r.profiles?.full_name}</strong></td>
+                <td>{appTime ?? <span className="missing">— missing</span>}</td>
+                <td>{devTime ?? <span className="missing">— missing</span>}</td>
+                <td>{statusPill(r)}</td>
               </tr>
             );
           })}
         </tbody>
       </table>
+
+      {visibleAdvances.map((a) => (
+        <div className="approval-card" key={a.id}>
+          <div>
+            <div className="who">
+              {a.profiles?.full_name} asked for {rupees(a.amount)} advance
+            </div>
+            <div className="why">
+              {a.reason ? `${a.reason} · ` : ""}
+              balance after: {rupees((balances[a.profile_id] ?? 0) + Number(a.amount))}
+            </div>
+          </div>
+          <div className="acts">
+            <button className="btn good" onClick={() => decideAdvance(a, true)}>Approve</button>
+            <button className="btn soft" onClick={() => decideAdvance(a, false)}>Not now</button>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

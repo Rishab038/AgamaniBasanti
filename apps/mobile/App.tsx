@@ -1,12 +1,25 @@
 import { useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
+import {
+  useFonts,
+  Nunito_600SemiBold,
+  Nunito_700Bold,
+  Nunito_800ExtraBold,
+  Nunito_900Black,
+} from "@expo-google-fonts/nunito";
 import type { Session } from "@supabase/supabase-js";
 import { Branch, Profile, supabase } from "./src/lib/supabase";
 import LoginScreen from "./src/screens/LoginScreen";
-import HomeScreen from "./src/screens/HomeScreen";
+import MainScreen from "./src/screens/MainScreen";
 
 export default function App() {
+  const [fontsLoaded] = useFonts({
+    Nunito_600SemiBold,
+    Nunito_700Bold,
+    Nunito_800ExtraBold,
+    Nunito_900Black,
+  });
   const [session, setSession] = useState<Session | null>(null);
   const [ready, setReady] = useState(false);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -47,11 +60,11 @@ export default function App() {
     })();
   }, [session]);
 
-  if (!ready || (session && (!profile || !branch))) {
+  if (!fontsLoaded || !ready || (session && (!profile || !branch))) {
     return (
       <View style={styles.loading}>
-        <StatusBar style="light" />
-        <ActivityIndicator size="large" color="#2dd4bf" />
+        <StatusBar style="dark" />
+        <ActivityIndicator size="large" color="#d96f4e" />
         {session && profile && !branch && (
           <Text style={styles.warn}>
             Your profile has no shop assigned yet. Please ask the owner.
@@ -63,9 +76,9 @@ export default function App() {
 
   return (
     <>
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
       {session && profile && branch ? (
-        <HomeScreen profile={profile} branch={branch} />
+        <MainScreen profile={profile} branch={branch} />
       ) : (
         <LoginScreen />
       )}
@@ -79,7 +92,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     padding: 24,
-    backgroundColor: "#0c1222",
+    backgroundColor: "#faf6f0",
   },
-  warn: { marginTop: 16, fontSize: 16, color: "#a6b4c8", textAlign: "center" },
+  warn: { marginTop: 16, fontSize: 16, color: "#6b5a4c", textAlign: "center" },
 });

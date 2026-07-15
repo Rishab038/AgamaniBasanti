@@ -7,8 +7,9 @@ import Layout from "./pages/Layout";
 import Dashboard from "./pages/Dashboard";
 import Staff from "./pages/Staff";
 import Attendance from "./pages/Attendance";
+import Approvals from "./pages/Approvals";
 import Settings from "./pages/Settings";
-import { Advances, Payroll } from "./pages/stubs";
+import { Salary } from "./pages/stubs";
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -33,8 +34,8 @@ export default function App() {
             <Route index element={<Dashboard />} />
             <Route path="staff" element={<Staff />} />
             <Route path="attendance" element={<Attendance />} />
-            <Route path="advances" element={<Advances />} />
-            <Route path="payroll" element={<Payroll />} />
+            <Route path="approvals" element={<Approvals />} />
+            <Route path="salary" element={<Salary />} />
             <Route path="settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>

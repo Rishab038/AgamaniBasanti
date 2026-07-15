@@ -35,7 +35,8 @@
         {
           "cameraPermission": "Attendance needs a selfie to confirm it is really you."
         }
-      ]
+      ],
+      "expo-font"
     ]
   }
 }

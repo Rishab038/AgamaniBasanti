@@ -1,18 +1,14 @@
 // Phase 3 pages — placeholders so navigation and routing are in
 // place. Each grows into its full module per docs/ARCHITECTURE.md.
 
-function Stub({ title, note }: { title: string; note: string }) {
-  return (
-    <div>
-      <h1>{title}</h1>
-      <p className="muted">{note}</p>
+export const Salary = () => (
+  <div>
+    <div className="page-head">
+      <h1>Salary</h1>
+      <p>
+        Phase 3: run month-end salary, review each payslip, confirm, and export
+        CSV/PDF for accounting. Advance recovery is deducted automatically.
+      </p>
     </div>
-  );
-}
-
-export const Advances = () => (
-  <Stub title="Advances" note="Phase 3: approve requests, view running balances and recovery schedule." />
-);
-export const Payroll = () => (
-  <Stub title="Payroll" note="Phase 3: run month-end payroll, review, confirm, and export payslips." />
+  </div>
 );

@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import {
   CalendarCheck2,
@@ -5,22 +6,32 @@ import {
   LogOut,
   Settings2,
   Users,
-  Wallet,
+  BadgeCheck,
   ReceiptIndianRupee,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 
-const links = [
-  { to: "/", label: "Today", icon: LayoutDashboard },
-  { to: "/staff", label: "Staff", icon: Users },
-  { to: "/attendance", label: "Attendance", icon: CalendarCheck2 },
-  { to: "/advances", label: "Advances", icon: Wallet },
-  { to: "/payroll", label: "Payroll", icon: ReceiptIndianRupee },
-  { to: "/settings", label: "Settings", icon: Settings2 },
-];
-
 export default function Layout() {
   const location = useLocation();
+  const [pendingCount, setPendingCount] = useState(0);
+
+  // approvals badge — refreshed on every page change
+  useEffect(() => {
+    supabase
+      .from("advances")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "PENDING")
+      .then(({ count }) => setPendingCount(count ?? 0));
+  }, [location.pathname]);
+
+  const links = [
+    { to: "/", label: "Today", icon: LayoutDashboard },
+    { to: "/staff", label: "Staff", icon: Users },
+    { to: "/attendance", label: "Attendance", icon: CalendarCheck2 },
+    { to: "/approvals", label: "Approvals", icon: BadgeCheck, count: pendingCount },
+    { to: "/salary", label: "Salary", icon: ReceiptIndianRupee },
+    { to: "/settings", label: "Settings", icon: Settings2 },
+  ];
 
   return (
     <div className="shell">
@@ -29,7 +40,7 @@ export default function Layout() {
           <div className="brand-mark">অ</div>
           <div>
             <div className="name">Agamani</div>
-            <div className="tag">Staff Manager</div>
+            <div className="tag">Basanti · Cloth House</div>
           </div>
         </div>
         <nav>
@@ -42,6 +53,7 @@ export default function Layout() {
             >
               <l.icon />
               {l.label}
+              {l.count ? <span className="count">{l.count}</span> : null}
             </NavLink>
           ))}
         </nav>
@@ -51,7 +63,6 @@ export default function Layout() {
         </button>
       </aside>
       <main className="content">
-        {/* key remount = entrance animation on every page change */}
         <div className="page" key={location.pathname}>
           <Outlet />
         </div>
