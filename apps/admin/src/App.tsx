@@ -5,7 +5,10 @@ import { supabase } from "./lib/supabase";
 import Login from "./pages/Login";
 import Layout from "./pages/Layout";
 import Dashboard from "./pages/Dashboard";
-import { Advances, Attendance, Payroll, Settings, Staff } from "./pages/stubs";
+import Staff from "./pages/Staff";
+import Attendance from "./pages/Attendance";
+import Settings from "./pages/Settings";
+import { Advances, Payroll } from "./pages/stubs";
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);

@@ -1,18 +1,22 @@
 // Worker home: one giant button. Enabled only inside the geofence
 // (or on shop Wi-Fi); otherwise grey with a plain-language distance
 // message. Tap -> selfie -> queued locally -> synced.
+// Motion: pulse ring invites the tap, spring on press, animated
+// success overlay + haptics make a punch feel done.
 
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
+  Animated,
   Modal,
+  Pressable,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
 import * as Location from "expo-location";
+import * as Haptics from "expo-haptics";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Branch, Profile, supabase } from "../lib/supabase";
@@ -20,6 +24,7 @@ import { evaluateFence, FenceResult } from "../lib/geofence";
 import { runSpoofChecks } from "../lib/antispoof";
 import { performCheckin } from "../lib/checkin";
 import { drain, pendingCount } from "../lib/queue";
+import { colors, radius, shadow } from "../lib/theme";
 
 const LAST_DIRECTION_KEY = "agamani.last_direction";
 
@@ -36,17 +41,42 @@ export default function HomeScreen({
   const [cameraOpen, setCameraOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState(0);
+  const [lastPunch, setLastPunch] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [blocked, setBlocked] = useState<string | null>(null);
   const [camPerm, requestCamPerm] = useCameraPermissions();
   const [locGranted, setLocGranted] = useState<boolean | null>(null);
   const cameraRef = useRef<CameraView>(null);
 
+  const pulse = useRef(new Animated.Value(0)).current;
+  const press = useRef(new Animated.Value(1)).current;
+  const successAnim = useRef(new Animated.Value(0)).current;
+
+  const enabled = fence.inside && !busy;
+
   // today's punch direction toggles IN -> OUT (offline-safe)
   useEffect(() => {
     AsyncStorage.getItem(LAST_DIRECTION_KEY).then((v) => {
-      const [day, dir] = (v ?? "").split("|");
-      if (day === new Date().toDateString() && dir === "IN") setDirection("OUT");
+      const [day, dir, time] = (v ?? "").split("|");
+      if (day === new Date().toDateString()) {
+        if (dir === "IN") setDirection("OUT");
+        if (time) setLastPunch(`${dir === "IN" ? "Checked in" : "Checked out"} at ${time}`);
+      }
     });
   }, []);
+
+  // inviting pulse ring while the button is live
+  useEffect(() => {
+    if (!enabled) return;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 1400, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0, duration: 0, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [enabled, pulse]);
 
   // watch GPS while the app is open
   useEffect(() => {
@@ -83,14 +113,26 @@ export default function HomeScreen({
     drain().then(() => setPending(pendingCount()));
   }, []);
 
+  const showSuccess = (msg: string) => {
+    setSuccess(msg);
+    successAnim.setValue(0);
+    Animated.sequence([
+      Animated.spring(successAnim, { toValue: 1, useNativeDriver: true, speed: 14, bounciness: 8 }),
+      Animated.delay(1600),
+      Animated.timing(successAnim, { toValue: 0, duration: 260, useNativeDriver: true }),
+    ]).start(() => setSuccess(null));
+  };
+
   const startCheckin = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     if (!camPerm?.granted) {
       const p = await requestCamPerm();
       if (!p.granted) {
-        Alert.alert("Camera needed", "Attendance needs a selfie. Please allow the camera.");
+        setBlocked("Attendance needs a selfie. Please allow the camera and try again.");
         return;
       }
     }
+    setBlocked(null);
     setCameraOpen(true);
   };
 
@@ -103,10 +145,8 @@ export default function HomeScreen({
         : { hardBlock: false, reasons: ["no_gps_fix"] };
       if (spoof.hardBlock) {
         setCameraOpen(false);
-        Alert.alert(
-          "Check-in blocked",
-          "Location problem detected. Please switch off any fake-location app and try again.",
-        );
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        setBlocked("Location problem detected. Switch off any fake-location app and try again.");
         return;
       }
 
@@ -121,72 +161,112 @@ export default function HomeScreen({
         flagReasons: [...spoof.reasons, ...(fence.via === "wifi" ? ["wifi_fallback"] : [])],
       });
 
+      const time = new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
       await AsyncStorage.setItem(
         LAST_DIRECTION_KEY,
-        `${new Date().toDateString()}|${direction}`,
+        `${new Date().toDateString()}|${direction}|${time}`,
       );
+      setLastPunch(`${direction === "IN" ? "Checked in" : "Checked out"} at ${time}`);
       setDirection(direction === "IN" ? "OUT" : "IN");
       setPending(pendingCount());
       setCameraOpen(false);
-      Alert.alert(
-        direction === "IN" ? "Checked in!" : "Checked out!",
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      showSuccess(
         queued
-          ? "No internet right now — saved on the phone, will send automatically."
-          : "Done. Have a good day!",
+          ? "Saved on phone — will send when internet returns"
+          : direction === "IN" ? "Checked in. Have a good day!" : "Checked out. See you tomorrow!",
       );
-    } catch (e) {
-      Alert.alert("Something went wrong", "Please try again in a minute.");
-      console.error(e);
+    } catch {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      setCameraOpen(false);
+      setBlocked("Something went wrong. Please try again in a minute.");
     } finally {
       setBusy(false);
     }
   };
 
-  const buttonEnabled = fence.inside && !busy;
+  const pulseScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.45] });
+  const pulseOpacity = pulse.interpolate({ inputRange: [0, 0.7, 1], outputRange: [0.35, 0.12, 0] });
+  const isOut = direction === "OUT";
 
   return (
     <View style={styles.container}>
-      <Text style={styles.greeting}>Hello, {profile.full_name}</Text>
-      <Text style={styles.date}>{new Date().toDateString()}</Text>
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.greeting}>Hello, {profile.full_name.split(" ")[0]}</Text>
+          <Text style={styles.date}>
+            {new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}
+          </Text>
+        </View>
+        <View style={[styles.dot, { backgroundColor: fence.inside ? colors.good : colors.ink3 }]} />
+      </View>
 
       {pending > 0 && (
         <View style={styles.pendingBanner}>
           <Text style={styles.pendingText}>
-            {pending} check-in{pending > 1 ? "s" : ""} waiting for internet
+            ⏳ {pending} check-in{pending > 1 ? "s" : ""} waiting for internet — will send automatically
           </Text>
+        </View>
+      )}
+      {blocked && (
+        <Pressable style={styles.blockedBanner} onPress={() => setBlocked(null)}>
+          <Text style={styles.blockedText}>{blocked}</Text>
+        </Pressable>
+      )}
+
+      {lastPunch && (
+        <View style={[styles.statusCard, shadow.card]}>
+          <Text style={styles.statusLabel}>TODAY</Text>
+          <Text style={styles.statusValue}>{lastPunch}</Text>
         </View>
       )}
 
       <View style={styles.center}>
-        <TouchableOpacity
-          style={[
-            styles.bigButton,
-            direction === "OUT" && styles.bigButtonOut,
-            !buttonEnabled && styles.bigButtonDisabled,
-          ]}
-          disabled={!buttonEnabled}
-          onPress={startCheckin}
-        >
-          <Text style={styles.bigButtonText}>
-            {direction === "IN" ? "CHECK IN" : "CHECK OUT"}
-          </Text>
-        </TouchableOpacity>
+        <View style={styles.buttonStack}>
+          {enabled && (
+            <Animated.View
+              style={[
+                styles.pulseRing,
+                { backgroundColor: isOut ? colors.out : colors.brand },
+                { opacity: pulseOpacity, transform: [{ scale: pulseScale }] },
+              ]}
+            />
+          )}
+          <Animated.View style={{ transform: [{ scale: press }] }}>
+            <Pressable
+              onPressIn={() =>
+                Animated.spring(press, { toValue: 0.94, useNativeDriver: true, speed: 30 }).start()
+              }
+              onPressOut={() =>
+                Animated.spring(press, { toValue: 1, useNativeDriver: true, speed: 20 }).start()
+              }
+              onPress={startCheckin}
+              disabled={!enabled}
+              style={[
+                styles.bigButton,
+                shadow.button,
+                { backgroundColor: isOut ? colors.out : colors.brand },
+                !enabled && styles.bigButtonDisabled,
+              ]}
+            >
+              <Text style={styles.bigButtonText}>{isOut ? "CHECK\nOUT" : "CHECK\nIN"}</Text>
+            </Pressable>
+          </Animated.View>
+        </View>
 
         {locGranted === false && (
-          <Text style={styles.hint}>
-            Please allow location — attendance only works at the shop.
-          </Text>
+          <Text style={styles.hint}>Please allow location — attendance only works at the shop.</Text>
         )}
         {locGranted && !fence.inside && (
           <Text style={styles.hint}>
             {fence.distance !== null
-              ? `You are ${fence.distance} m from the shop. Come closer to check in.`
+              ? `You are ${fence.distance} m from the shop.\nCome closer to check in.`
               : "Finding your location…"}
           </Text>
         )}
         {fence.inside && (
           <Text style={[styles.hint, styles.hintOk]}>
-            You are at the shop {fence.via === "wifi" ? "(shop Wi-Fi)" : ""}
+            ✓ You are at the shop{fence.via === "wifi" ? " (shop Wi-Fi)" : ""}
           </Text>
         )}
       </View>
@@ -195,8 +275,34 @@ export default function HomeScreen({
         <Text style={styles.logout}>Log out</Text>
       </TouchableOpacity>
 
+      {/* success overlay */}
+      {success && (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.successWrap,
+            {
+              opacity: successAnim,
+              transform: [{
+                scale: successAnim.interpolate({ inputRange: [0, 1], outputRange: [0.8, 1] }),
+              }],
+            },
+          ]}
+        >
+          <View style={[styles.successCard, shadow.card]}>
+            <View style={styles.successCircle}>
+              <Text style={styles.successTick}>✓</Text>
+            </View>
+            <Text style={styles.successText}>{success}</Text>
+          </View>
+        </Animated.View>
+      )}
+
       <Modal visible={cameraOpen} animationType="slide">
         <View style={styles.cameraContainer}>
+          <View style={styles.cameraTop}>
+            <Text style={styles.cameraHint}>Take a clear selfie to confirm it's you</Text>
+          </View>
           <CameraView ref={cameraRef} style={styles.camera} facing="front" />
           <View style={styles.cameraControls}>
             <TouchableOpacity
@@ -206,12 +312,17 @@ export default function HomeScreen({
             >
               <Text style={styles.cancelText}>Cancel</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.shutter} onPress={capture} disabled={busy}>
-              {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.shutterText}>📸</Text>}
-            </TouchableOpacity>
+            <Pressable
+              style={({ pressed }) => [styles.shutter, pressed && { transform: [{ scale: 0.92 }] }]}
+              onPress={capture}
+              disabled={busy}
+            >
+              {busy
+                ? <ActivityIndicator color={colors.brand} />
+                : <View style={styles.shutterInner} />}
+            </Pressable>
             <View style={{ width: 80 }} />
           </View>
-          <Text style={styles.cameraHint}>Take a clear selfie to confirm attendance</Text>
         </View>
       </Modal>
     </View>
@@ -219,50 +330,135 @@ export default function HomeScreen({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff", padding: 24, paddingTop: 64 },
-  greeting: { fontSize: 26, fontWeight: "700", color: "#1a1a2e" },
-  date: { fontSize: 16, color: "#666", marginTop: 4 },
+  container: { flex: 1, backgroundColor: colors.bg, padding: 22, paddingTop: 64 },
+  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
+  greeting: { fontSize: 26, fontWeight: "800", color: colors.ink, letterSpacing: -0.4 },
+  date: { fontSize: 15, color: colors.ink3, marginTop: 3 },
+  dot: { width: 12, height: 12, borderRadius: 6, marginTop: 10 },
+
   pendingBanner: {
-    backgroundColor: "#fdf3d8",
-    borderRadius: 10,
-    padding: 12,
-    marginTop: 16,
+    backgroundColor: colors.warnBg,
+    borderRadius: radius.md,
+    padding: 13,
+    marginTop: 18,
+    borderWidth: 1,
+    borderColor: "#fde8c0",
   },
-  pendingText: { color: "#8a6d1a", fontSize: 15, textAlign: "center" },
+  pendingText: { color: colors.warn, fontSize: 14, textAlign: "center", fontWeight: "500" },
+  blockedBanner: {
+    backgroundColor: colors.seriousBg,
+    borderRadius: radius.md,
+    padding: 13,
+    marginTop: 18,
+    borderWidth: 1,
+    borderColor: "#fde3e1",
+  },
+  blockedText: { color: colors.serious, fontSize: 14, textAlign: "center", fontWeight: "500" },
+
+  statusCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.line,
+    padding: 18,
+    marginTop: 18,
+  },
+  statusLabel: { fontSize: 11.5, fontWeight: "700", color: colors.ink3, letterSpacing: 1 },
+  statusValue: { fontSize: 17, fontWeight: "600", color: colors.ink, marginTop: 3 },
+
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
+  buttonStack: { width: 250, height: 250, alignItems: "center", justifyContent: "center" },
+  pulseRing: {
+    position: "absolute",
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+  },
   bigButton: {
-    width: 240,
-    height: 240,
-    borderRadius: 120,
-    backgroundColor: "#16a085",
+    width: 220,
+    height: 220,
+    borderRadius: 110,
     justifyContent: "center",
     alignItems: "center",
-    elevation: 6,
   },
-  bigButtonOut: { backgroundColor: "#e67e22" },
-  bigButtonDisabled: { backgroundColor: "#bbb", elevation: 0 },
-  bigButtonText: { color: "#fff", fontSize: 30, fontWeight: "800" },
-  hint: { fontSize: 17, color: "#666", textAlign: "center", marginTop: 24, paddingHorizontal: 12 },
-  hintOk: { color: "#16a085", fontWeight: "600" },
-  logout: { textAlign: "center", color: "#999", fontSize: 15, padding: 8 },
+  bigButtonDisabled: {
+    backgroundColor: "#c3ccd4",
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  bigButtonText: {
+    color: "#fff",
+    fontSize: 32,
+    fontWeight: "800",
+    textAlign: "center",
+    lineHeight: 40,
+    letterSpacing: 0.5,
+  },
+  hint: {
+    fontSize: 16,
+    color: colors.ink2,
+    textAlign: "center",
+    marginTop: 26,
+    paddingHorizontal: 12,
+    lineHeight: 23,
+  },
+  hintOk: { color: colors.good, fontWeight: "600" },
+  logout: { textAlign: "center", color: colors.ink3, fontSize: 14, padding: 10 },
+
+  successWrap: {
+    position: "absolute",
+    top: 0, left: 0, right: 0, bottom: 0,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  successCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    paddingVertical: 28,
+    paddingHorizontal: 30,
+    alignItems: "center",
+    maxWidth: 300,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  successCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: colors.goodBg,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 14,
+  },
+  successTick: { fontSize: 32, color: colors.good, fontWeight: "800" },
+  successText: { fontSize: 16, fontWeight: "600", color: colors.ink, textAlign: "center" },
+
   cameraContainer: { flex: 1, backgroundColor: "#000" },
-  camera: { flex: 1 },
+  cameraTop: { paddingTop: 64, paddingBottom: 16, alignItems: "center" },
+  cameraHint: { color: "#fff", fontSize: 16, fontWeight: "500" },
+  camera: { flex: 1, borderRadius: 24, overflow: "hidden", marginHorizontal: 14 },
   cameraControls: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    padding: 24,
+    padding: 26,
   },
   cancelButton: { width: 80 },
-  cancelText: { color: "#fff", fontSize: 18 },
+  cancelText: { color: "#fff", fontSize: 17 },
   shutter: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: "#16a085",
+    width: 78,
+    height: 78,
+    borderRadius: 39,
+    backgroundColor: "#fff",
     justifyContent: "center",
     alignItems: "center",
   },
-  shutterText: { fontSize: 32 },
-  cameraHint: { color: "#fff", textAlign: "center", paddingBottom: 32, fontSize: 16 },
+  shutterInner: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    borderWidth: 4,
+    borderColor: colors.brand,
+  },
+  logoutHidden: { display: "none" },
 });

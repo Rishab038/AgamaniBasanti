@@ -19,8 +19,9 @@ export default function Login() {
   return (
     <div className="login-wrap">
       <form className="login-card" onSubmit={submit}>
+        <div className="brand-mark">অ</div>
         <h1>Agamani Basanti</h1>
-        <p className="muted">Shop Dashboard</p>
+        <p className="sub">Shop staff, attendance & salary — in one place</p>
         <input
           type="email"
           placeholder="Email"
@@ -36,7 +37,7 @@ export default function Login() {
           autoComplete="current-password"
         />
         {error && <p className="error">{error}</p>}
-        <button type="submit" disabled={busy || !email || !password}>
+        <button className="btn primary block" type="submit" disabled={busy || !email || !password}>
           {busy ? "Signing in…" : "Sign in"}
         </button>
       </form>

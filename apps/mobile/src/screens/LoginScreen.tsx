@@ -1,11 +1,11 @@
 // One-time login: employee code + 6-digit PIN. The owner creates
-// each account; under the hood code+PIN map to a Supabase
-// email/password (no SMS OTP — that would cost money). The session
-// persists, so workers see this screen exactly once.
+// each account; code+PIN map to a Supabase email/password under the
+// hood. The session persists — workers see this screen exactly once.
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
@@ -14,9 +14,10 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { supabase } from "../lib/supabase";
+import { colors, radius, shadow } from "../lib/theme";
 
-// employee_code "W07" -> w07@staff.agamani.app
 const codeToEmail = (code: string) =>
   `${code.trim().toLowerCase()}@staff.agamani.app`;
 
@@ -25,6 +26,11 @@ export default function LoginScreen() {
   const [pin, setPin] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const rise = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(rise, { toValue: 1, duration: 450, useNativeDriver: true }).start();
+  }, [rise]);
 
   const login = async () => {
     setBusy(true);
@@ -33,72 +39,133 @@ export default function LoginScreen() {
       email: codeToEmail(code),
       password: pin,
     });
-    if (err) setError("Wrong code or PIN. Please ask the owner for help.");
+    if (err) setError(`Could not log in: ${err.message}`);
     setBusy(false);
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
-      <Text style={styles.title}>Agamani Basanti</Text>
-      <Text style={styles.subtitle}>Staff Attendance</Text>
-
-      <TextInput
-        style={styles.input}
-        placeholder="Employee Code (e.g. W07)"
-        autoCapitalize="characters"
-        autoCorrect={false}
-        value={code}
-        onChangeText={setCode}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="6-digit PIN"
-        keyboardType="number-pad"
-        secureTextEntry
-        maxLength={6}
-        value={pin}
-        onChangeText={setPin}
-      />
-
-      {error && <Text style={styles.error}>{error}</Text>}
-
-      <TouchableOpacity
-        style={[styles.button, (busy || !code || pin.length < 6) && styles.buttonDisabled]}
-        onPress={login}
-        disabled={busy || !code || pin.length < 6}
+    <View style={styles.root}>
+      <LinearGradient
+        colors={[colors.brandDeep, colors.brandDark, colors.brand]}
+        style={styles.hero}
       >
-        {busy ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.buttonText}>LOG IN</Text>
-        )}
-      </TouchableOpacity>
-    </KeyboardAvoidingView>
+        <Text style={styles.heroMark}>অ</Text>
+        <Text style={styles.heroTitle}>Agamani Basanti</Text>
+        <Text style={styles.heroSub}>Staff attendance</Text>
+      </LinearGradient>
+
+      <KeyboardAvoidingView
+        style={styles.body}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <Animated.View
+          style={[
+            styles.card,
+            shadow.card,
+            {
+              opacity: rise,
+              transform: [{
+                translateY: rise.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }),
+              }],
+            },
+          ]}
+        >
+          <Text style={styles.label}>Employee code</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="e.g. W07"
+            placeholderTextColor={colors.ink3}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            value={code}
+            onChangeText={setCode}
+          />
+          <Text style={styles.label}>PIN</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="6 digits"
+            placeholderTextColor={colors.ink3}
+            keyboardType="number-pad"
+            secureTextEntry
+            maxLength={6}
+            value={pin}
+            onChangeText={setPin}
+          />
+
+          {error && <Text style={styles.error}>{error}</Text>}
+
+          <TouchableOpacity
+            style={[styles.button, (busy || !code || pin.length < 6) && styles.buttonDisabled]}
+            onPress={login}
+            disabled={busy || !code || pin.length < 6}
+            activeOpacity={0.85}
+          >
+            {busy ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.buttonText}>Log in</Text>
+            )}
+          </TouchableOpacity>
+          <Text style={styles.help}>
+            Don't have a code? Ask the shop owner.
+          </Text>
+        </Animated.View>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: "center", padding: 24, backgroundColor: "#fff" },
-  title: { fontSize: 32, fontWeight: "700", textAlign: "center", color: "#1a1a2e" },
-  subtitle: { fontSize: 18, textAlign: "center", color: "#666", marginBottom: 40 },
-  input: {
-    borderWidth: 2,
-    borderColor: "#ddd",
-    borderRadius: 12,
-    padding: 18,
-    fontSize: 20,
-    marginBottom: 16,
-  },
-  error: { color: "#c0392b", fontSize: 16, textAlign: "center", marginBottom: 12 },
-  button: {
-    backgroundColor: "#16a085",
-    borderRadius: 16,
-    padding: 22,
+  root: { flex: 1, backgroundColor: colors.bg },
+  hero: {
+    paddingTop: 90,
+    paddingBottom: 64,
     alignItems: "center",
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
   },
-  buttonDisabled: { backgroundColor: "#aaa" },
-  buttonText: { color: "#fff", fontSize: 22, fontWeight: "700" },
+  heroMark: {
+    fontSize: 40,
+    color: "#fff",
+    fontWeight: "800",
+    width: 76,
+    height: 76,
+    lineHeight: 74,
+    textAlign: "center",
+    backgroundColor: "rgba(255,255,255,0.14)",
+    borderRadius: 22,
+    overflow: "hidden",
+    marginBottom: 14,
+  },
+  heroTitle: { color: "#fff", fontSize: 26, fontWeight: "800", letterSpacing: -0.5 },
+  heroSub: { color: "rgba(255,255,255,0.75)", fontSize: 15, marginTop: 2 },
+  body: { flex: 1, padding: 20, marginTop: -36 },
+  card: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  label: { fontSize: 13, fontWeight: "600", color: colors.ink2, marginBottom: 6, marginTop: 10 },
+  input: {
+    borderWidth: 1.5,
+    borderColor: colors.line,
+    borderRadius: radius.md,
+    padding: 15,
+    fontSize: 18,
+    color: colors.ink,
+    backgroundColor: colors.surface,
+  },
+  error: { color: colors.serious, fontSize: 14, marginTop: 12, textAlign: "center" },
+  button: {
+    backgroundColor: colors.brand,
+    borderRadius: radius.md,
+    padding: 17,
+    alignItems: "center",
+    marginTop: 20,
+  },
+  buttonDisabled: { backgroundColor: "#b9c4cc" },
+  buttonText: { color: "#fff", fontSize: 17, fontWeight: "700" },
+  help: { textAlign: "center", color: colors.ink3, fontSize: 13, marginTop: 16 },
 });
