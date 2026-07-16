@@ -17,7 +17,15 @@ import { Profile, supabase } from "../../lib/supabase";
 import { colors, fonts, radius, shadow } from "../../lib/theme";
 import type { SharedData } from "../MainScreen";
 
-type Payslip = { id: string; net: number; payroll_runs: { month: string } | null };
+type Payslip = {
+  id: string;
+  gross: number;
+  deductions: number;
+  advance_cut: number;
+  net: number;
+  data: Record<string, number | string | boolean>;
+  payroll_runs: { month: string } | null;
+};
 
 const rupees = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`;
 
@@ -35,10 +43,12 @@ export default function MoneyTab({ profile, data }: { profile: Profile; data: Sh
   const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
   const salarySoFar = (profile.base_salary / daysInMonth) * worked;
 
+  const [openSlip, setOpenSlip] = useState<string | null>(null);
+
   useEffect(() => {
     supabase
       .from("payslips")
-      .select("id, net, payroll_runs(month)")
+      .select("id, gross, deductions, advance_cut, net, data, payroll_runs(month)")
       .eq("profile_id", profile.id)
       .then(({ data: rows }) => setPayslips((rows as unknown as Payslip[]) ?? []));
   }, [profile.id]);
@@ -185,15 +195,52 @@ export default function MoneyTab({ profile, data }: { profile: Profile; data: Sh
           </Text>
         ) : (
           payslips.map((p) => (
-            <View key={p.id} style={styles.requestRow}>
-              <Text style={styles.requestAmount}>
-                {p.payroll_runs
-                  ? new Date(p.payroll_runs.month).toLocaleDateString("en-IN", {
-                      month: "long", year: "numeric",
-                    })
-                  : "—"}
-              </Text>
-              <Text style={[styles.requestAmount, { color: colors.good }]}>{rupees(p.net)}</Text>
+            <View key={p.id}>
+              <Pressable
+                style={styles.requestRow}
+                onPress={() => setOpenSlip(openSlip === p.id ? null : p.id)}
+              >
+                <Text style={styles.requestAmount}>
+                  {p.payroll_runs
+                    ? new Date(p.payroll_runs.month).toLocaleDateString("en-IN", {
+                        month: "long", year: "numeric",
+                      })
+                    : "—"}
+                </Text>
+                <Text style={[styles.requestAmount, { color: colors.good }]}>{rupees(p.net)}</Text>
+              </Pressable>
+              {openSlip === p.id && (
+                <View style={styles.slipDetail}>
+                  <View style={styles.slipRow}>
+                    <Text style={styles.slipLabel}>
+                      Salary for {String(p.data.eligible_days ?? "")} days
+                    </Text>
+                    <Text style={styles.slipValue}>{rupees(p.gross)}</Text>
+                  </View>
+                  {Number(p.deductions) > 0 && (
+                    <View style={styles.slipRow}>
+                      <Text style={styles.slipLabel}>
+                        {String(p.data.unpaid_days_total ?? 0)} unpaid day(s)
+                      </Text>
+                      <Text style={[styles.slipValue, { color: colors.serious }]}>
+                        − {rupees(p.deductions)}
+                      </Text>
+                    </View>
+                  )}
+                  {Number(p.advance_cut) > 0 && (
+                    <View style={styles.slipRow}>
+                      <Text style={styles.slipLabel}>Advance repayment</Text>
+                      <Text style={[styles.slipValue, { color: colors.accent }]}>
+                        − {rupees(p.advance_cut)}
+                      </Text>
+                    </View>
+                  )}
+                  <View style={[styles.slipRow, styles.slipTotal]}>
+                    <Text style={[styles.slipLabel, { color: colors.ink }]}>You receive</Text>
+                    <Text style={[styles.slipValue, { color: colors.good }]}>{rupees(p.net)}</Text>
+                  </View>
+                </View>
+              )}
             </View>
           ))
         )}
@@ -270,4 +317,20 @@ const styles = StyleSheet.create({
   requestMeta: { fontFamily: fonts.semi, fontSize: 12.5, color: colors.ink3, marginTop: 1 },
   pill: { borderRadius: radius.pill, paddingVertical: 4, paddingHorizontal: 12 },
   pillText: { fontFamily: fonts.extra, fontSize: 12 },
+
+  slipDetail: {
+    backgroundColor: colors.bg,
+    borderRadius: radius.sm,
+    padding: 14,
+    marginBottom: 8,
+  },
+  slipRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 4,
+  },
+  slipTotal: { borderTopWidth: 1, borderTopColor: colors.line2, marginTop: 6, paddingTop: 10 },
+  slipLabel: { fontFamily: fonts.bold, fontSize: 13.5, color: colors.ink2 },
+  slipValue: { fontFamily: fonts.extra, fontSize: 14.5, color: colors.ink },
 });

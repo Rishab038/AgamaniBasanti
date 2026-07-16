@@ -9,7 +9,7 @@ import Staff from "./pages/Staff";
 import Attendance from "./pages/Attendance";
 import Approvals from "./pages/Approvals";
 import Settings from "./pages/Settings";
-import { Salary } from "./pages/stubs";
+import Salary from "./pages/Salary";
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);

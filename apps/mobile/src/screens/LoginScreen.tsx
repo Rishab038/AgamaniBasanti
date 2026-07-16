@@ -73,7 +73,11 @@ export default function LoginScreen() {
   const onPinChange = (v: string) => {
     const digits = v.replace(/\D/g, "").slice(0, 6);
     setPin(digits);
+    // auto-submit is a convenience; the Log in button below is the failsafe
     if (digits.length === 6 && code.trim()) login(digits);
+    else if (digits.length === 6 && !code.trim()) {
+      setError("Please type your employee code first, then the PIN.");
+    }
   };
 
   return (
@@ -138,8 +142,22 @@ export default function LoginScreen() {
               maxLength={6}
             />
 
-            {busy && <ActivityIndicator color={colors.accent} style={{ marginTop: 18 }} />}
             {error && <Text style={styles.error}>{error}</Text>}
+
+            <Pressable
+              style={[
+                styles.loginBtn,
+                (busy || !code.trim() || pin.length < 6) && styles.loginBtnDisabled,
+              ]}
+              disabled={busy || !code.trim() || pin.length < 6}
+              onPress={() => login(pin)}
+            >
+              {busy ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.loginBtnText}>Log in</Text>
+              )}
+            </Pressable>
           </View>
 
           <Text style={styles.help}>No code yet? Ask the shop owner to add you.</Text>
@@ -213,6 +231,16 @@ const styles = StyleSheet.create({
   pinBoxFilled: { borderColor: colors.accentDeep, backgroundColor: colors.accentSoft },
   pinDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: colors.accent },
   hiddenInput: { position: "absolute", opacity: 0, height: 1, width: 1 },
+  loginBtn: {
+    backgroundColor: colors.accent,
+    borderRadius: radius.pill,
+    paddingVertical: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 20,
+  },
+  loginBtnDisabled: { backgroundColor: colors.line2 },
+  loginBtnText: { fontFamily: fonts.extra, color: "#fff", fontSize: 16 },
   error: {
     color: colors.serious,
     fontSize: 14,
