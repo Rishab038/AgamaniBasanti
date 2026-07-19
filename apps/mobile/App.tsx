@@ -12,6 +12,7 @@ import type { Session } from "@supabase/supabase-js";
 import { Branch, Profile, supabase } from "./src/lib/supabase";
 import LoginScreen from "./src/screens/LoginScreen";
 import MainScreen from "./src/screens/MainScreen";
+import PendingScreen from "./src/screens/PendingScreen";
 
 export default function App() {
   const [fontsLoaded] = useFonts({
@@ -77,7 +78,9 @@ export default function App() {
   return (
     <>
       <StatusBar style="dark" />
-      {session && profile && branch ? (
+      {session && profile && !profile.active ? (
+        <PendingScreen profile={profile} onApproved={setProfile} />
+      ) : session && profile && branch ? (
         <MainScreen profile={profile} branch={branch} />
       ) : (
         <LoginScreen />

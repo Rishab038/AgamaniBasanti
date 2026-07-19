@@ -12,7 +12,7 @@
     "android": {
       "package": "com.agamani.staff",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#d96f4e",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -48,6 +48,12 @@
       "eas": {
         "projectId": "8c206c4b-970e-47b7-90f7-bfdb5e0783c0"
       }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/8c206c4b-970e-47b7-90f7-bfdb5e0783c0"
     }
   }
 }

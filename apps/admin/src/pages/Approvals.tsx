@@ -30,7 +30,11 @@ export default function Approvals() {
     const [adv, bal] = await Promise.all([
       supabase
         .from("advances")
-        .select("id, profile_id, amount, reason, status, created_at, decided_at, profiles(full_name, employee_code)")
+        // advances has two FKs to profiles (requester + decider) —
+        // PostgREST must be told this join means the requester
+        .select(
+          "id, profile_id, amount, reason, status, created_at, decided_at, profiles!advances_profile_id_fkey(full_name, employee_code)",
+        )
         .order("created_at", { ascending: false })
         .limit(50),
       supabase.from("advance_balances").select("profile_id, balance"),

@@ -8,3 +8,7 @@ verify_jwt = false
 
 [functions.cleanup-selfies]
 verify_jwt = false
+
+# public by design: gated by the shop joining code + owner approval
+[functions.self-register]
+verify_jwt = false

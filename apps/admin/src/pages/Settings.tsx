@@ -25,6 +25,13 @@ type Shift = {
 
 type Holiday = { id: string; branch_id: string; on_date: string; name: string };
 
+type Device = {
+  id: string;
+  serial: string;
+  model: string | null;
+  last_seen_at: string | null;
+};
+
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export default function Settings() {
@@ -34,16 +41,23 @@ export default function Settings() {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [newHoliday, setNewHoliday] = useState({ on_date: "", name: "" });
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [newDevice, setNewDevice] = useState({ serial: "", model: "" });
+  const [joinCode, setJoinCode] = useState<string | null>(null);
 
   const load = async () => {
-    const [b, s, h] = await Promise.all([
+    const [b, s, h, d, jc] = await Promise.all([
       supabase.from("branches").select("*").order("created_at"),
       supabase.from("shifts").select("*").order("start_time"),
       supabase.from("holidays").select("*").gte("on_date", new Date().toISOString().slice(0, 10)).order("on_date"),
+      supabase.from("devices").select("id, serial, model, last_seen_at"),
+      supabase.from("app_settings").select("value").eq("key", "shop_join_code").maybeSingle(),
     ]);
     setBranches(b.data ?? []);
     setShifts(s.data ?? []);
     setHolidays(h.data ?? []);
+    setDevices(d.data ?? []);
+    setJoinCode(jc.data ? String(jc.data.value).replace(/"/g, "") : null);
   };
 
   useEffect(() => {
@@ -202,6 +216,102 @@ export default function Settings() {
           <button className="btn primary" onClick={() => saveShift(s)}>Save shift</button>
         </div>
       ))}
+
+      <h2>Shop joining code</h2>
+      <div className="card">
+        <p className="muted" style={{ marginBottom: 10 }}>
+          New staff install the app, tap "New staff? Join", and enter this code with their
+          name and mobile number. They appear on the Staff page for your one-tap approval.
+        </p>
+        <div className="filter-row">
+          <span className="join-code">{joinCode ?? "······"}</span>
+          <button
+            className="btn"
+            onClick={async () => {
+              const fresh = String(Math.floor(100000 + Math.random() * 900000));
+              const { error: err } = await supabase
+                .from("app_settings").update({ value: fresh }).eq("key", "shop_join_code");
+              if (err) setError(err.message);
+              else {
+                setJoinCode(fresh);
+                flash("New joining code set — share it with staff who still need to join.");
+              }
+            }}
+          >
+            ↻ New code
+          </button>
+        </div>
+      </div>
+
+      <h2>Fingerprint machine</h2>
+      <form
+        className="card holiday-row"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          if (!newDevice.serial.trim() || branches.length === 0) return;
+          const { error: err } = await supabase.from("devices").insert({
+            branch_id: branches[0].id,
+            serial: newDevice.serial.trim(),
+            model: newDevice.model.trim() || null,
+          });
+          if (err) setError(err.message);
+          else {
+            setNewDevice({ serial: "", model: "" });
+            flash("Machine registered — punches from this serial number will now be accepted.");
+            await load();
+          }
+        }}
+      >
+        <input
+          placeholder="Serial number (device menu → Info)"
+          value={newDevice.serial}
+          onChange={(e) => setNewDevice({ ...newDevice, serial: e.target.value })}
+        />
+        <input
+          placeholder="Model, e.g. Realtime T240F+"
+          value={newDevice.model}
+          onChange={(e) => setNewDevice({ ...newDevice, model: e.target.value })}
+        />
+        <button className="btn primary" type="submit">Register machine</button>
+      </form>
+      <table>
+        <thead>
+          <tr><th>Serial</th><th>Model</th><th>Last synced</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          {devices.length === 0 && (
+            <tr>
+              <td colSpan={4} className="muted">
+                No machine registered yet. Punches are only accepted from registered serial
+                numbers.
+              </td>
+            </tr>
+          )}
+          {devices.map((d) => {
+            const fresh =
+              d.last_seen_at &&
+              Date.now() - new Date(d.last_seen_at).getTime() < 2 * 3600 * 1000;
+            return (
+              <tr key={d.id}>
+                <td><strong>{d.serial}</strong></td>
+                <td>{d.model ?? "—"}</td>
+                <td className="muted">
+                  {d.last_seen_at
+                    ? new Date(d.last_seen_at).toLocaleString("en-IN", {
+                        day: "numeric", month: "short", hour: "numeric", minute: "2-digit",
+                      })
+                    : "never"}
+                </td>
+                <td>
+                  <span className={`pill ${fresh ? "good" : "serious"}`}>
+                    {fresh ? "Connected ✓" : "Not syncing"}
+                  </span>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
 
       <h2>Holidays</h2>
       <form className="card holiday-row" onSubmit={addHoliday}>

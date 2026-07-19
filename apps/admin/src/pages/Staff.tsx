@@ -15,11 +15,29 @@ type StaffRow = {
   device_id: string | null;
   device_enroll_no: number | null;
   active: boolean;
+  approved_at: string | null;
+  joined_on: string | null;
   branch_id: string;
   shift_id: string | null;
 };
 
 type Option = { id: string; name: string };
+
+type BulkRow = {
+  full_name: string;
+  phone: string;
+  device_enroll_no: number | null;
+  problem: string | null;
+};
+
+type BulkResult = {
+  full_name: string;
+  ok: boolean;
+  phone?: string;
+  pin?: string;
+  employee_code?: string;
+  error?: string;
+};
 
 async function callStaffAdmin(body: Record<string, unknown>) {
   const { data, error } = await supabase.functions.invoke("staff-admin", { body });
@@ -49,7 +67,6 @@ const emptyForm = {
 export default function Staff() {
   const [staff, setStaff] = useState<StaffRow[]>([]);
   const [branches, setBranches] = useState<Option[]>([]);
-  const [shifts, setShifts] = useState<Option[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [busy, setBusy] = useState(false);
@@ -57,14 +74,12 @@ export default function Staff() {
   const [error, setError] = useState<string | null>(null);
 
   const load = async () => {
-    const [p, b, s] = await Promise.all([
+    const [p, b] = await Promise.all([
       supabase.from("profiles").select("*").order("employee_code"),
       supabase.from("branches").select("id, name"),
-      supabase.from("shifts").select("id, name"),
     ]);
     setStaff((p.data as StaffRow[]) ?? []);
     setBranches(b.data ?? []);
-    setShifts(s.data ?? []);
   };
 
   useEffect(() => {
@@ -74,25 +89,88 @@ export default function Staff() {
   const set = (k: keyof typeof emptyForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm({ ...form, [k]: e.target.value });
 
+  // ---- bulk add: paste "Name, phone, machineNo, shiftTime" lines ----
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkText, setBulkText] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkResults, setBulkResults] = useState<BulkResult[]>([]);
+
+  const bulkRows: BulkRow[] = bulkText
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.split(",").map((p) => p.trim());
+      const full_name = parts[0] ?? "";
+      const phone = (parts[1] ?? "").replace(/\D/g, "").replace(/^91(?=\d{10}$)/, "");
+      const enroll = parts[2] ? parseInt(parts[2], 10) : NaN;
+      let problem: string | null = null;
+      if (!full_name) problem = "name missing";
+      else if (!/^[6-9]\d{9}$/.test(phone)) problem = "bad mobile number";
+      else if (staff.some((s) => s.phone === phone)) problem = "number already used";
+      return {
+        full_name,
+        phone,
+        device_enroll_no: Number.isInteger(enroll) && enroll > 0 ? enroll : null,
+        problem,
+      };
+    });
+
+  const runBulk = async () => {
+    setBulkBusy(true);
+    setError(null);
+    try {
+      const data = await callStaffAdmin({
+        action: "bulk_create_workers",
+        branch_id: branches[0]?.id,
+        workers: bulkRows.map((r) => ({
+          full_name: r.full_name,
+          phone: r.phone,
+          device_enroll_no: r.device_enroll_no,
+        })),
+      });
+      setBulkResults(data.results as BulkResult[]);
+      setBulkText("");
+      await load();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const downloadCredentials = () => {
+    const header = "Name,Mobile (login),PIN,Staff code,Result";
+    const lines = bulkResults.map((r) =>
+      [`"${r.full_name}"`, r.phone ?? "", r.pin ?? "", r.employee_code ?? "",
+        r.ok ? "created" : `failed: ${r.error}`].join(","),
+    );
+    const blob = new Blob([[header, ...lines].join("\n")], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "staff-login-details.csv";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
   const addWorker = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      await callStaffAdmin({
+      const res = await callStaffAdmin({
         action: "create_worker",
-        employee_code: form.employee_code,
+        employee_code: form.employee_code || null,
         full_name: form.full_name,
         pin: form.pin,
-        phone: form.phone || null,
+        phone: form.phone,
         base_salary: Number(form.base_salary) || 0,
         branch_id: form.branch_id || branches[0]?.id,
-        shift_id: form.shift_id || null,
         joined_on: form.joined_on,
       });
       setNotice(
-        `${form.full_name} added. Give them: code ${form.employee_code.toUpperCase()}, PIN ${form.pin}. ` +
-        `They log in once on their own phone and stay logged in.`,
+        `${form.full_name} added. They log in with their mobile number ${res.phone} and PIN ${form.pin} — ` +
+        `once, on their own phone, then they stay logged in.`,
       );
       setForm(emptyForm);
       setShowForm(false);
@@ -108,6 +186,7 @@ export default function Staff() {
   // non-technical owner, and native dialogs freeze embedded browsers
   const [pendingAction, setPendingAction] = useState<{ id: string; kind: string } | null>(null);
   const [newPin, setNewPin] = useState("");
+  const [newPhone, setNewPhone] = useState("");
 
   const runAction = async (row: StaffRow, kind: string) => {
     setPendingAction(null);
@@ -117,6 +196,12 @@ export default function Staff() {
         await callStaffAdmin({ action: "reset_pin", profile_id: row.id, new_pin: newPin });
         setNotice(`PIN for ${row.full_name} is now ${newPin}. Tell them privately.`);
         setNewPin("");
+      } else if (kind === "change_phone") {
+        const res = await callStaffAdmin({
+          action: "change_phone", profile_id: row.id, new_phone: newPhone,
+        });
+        setNotice(`${row.full_name} now logs in with ${res.phone} (same PIN).`);
+        setNewPhone("");
       } else if (kind === "toggle_active") {
         await callStaffAdmin({ action: "set_active", profile_id: row.id, active: !row.active });
       } else if (kind === "clear_device") {
@@ -125,6 +210,36 @@ export default function Staff() {
       } else if (kind === "delete") {
         await callStaffAdmin({ action: "delete_worker", profile_id: row.id });
       }
+      await load();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+
+  // ---- self-registration approvals ----
+  const [pendingSalary, setPendingSalary] = useState<Record<string, string>>({});
+  const pendingJoins = staff.filter((s) => !s.active && !s.approved_at);
+
+  const approveJoin = async (row: StaffRow) => {
+    setError(null);
+    try {
+      await callStaffAdmin({
+        action: "approve_worker",
+        profile_id: row.id,
+        base_salary: Number(pendingSalary[row.id]) || 0,
+      });
+      setNotice(`${row.full_name} is approved — they can start checking in right away.`);
+      await load();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+
+  const rejectJoin = async (row: StaffRow) => {
+    setError(null);
+    try {
+      await callStaffAdmin({ action: "delete_worker", profile_id: row.id });
+      setNotice(`Request from ${row.full_name} removed.`);
       await load();
     } catch (err) {
       setError((err as Error).message);
@@ -149,27 +264,147 @@ export default function Staff() {
       {notice && <div className="banner info" onClick={() => setNotice(null)}>{notice}</div>}
       {error && <div className="banner error" onClick={() => setError(null)}>{error}</div>}
 
-      <button className="btn primary" onClick={() => setShowForm(!showForm)}>
-        {showForm ? "Close" : "+ Add staff member"}
-      </button>
+      {pendingJoins.map((p) => (
+        <div className="approval-card" key={p.id}>
+          <div>
+            <div className="who">{p.full_name} wants to join</div>
+            <div className="why">
+              Mobile {p.phone}
+              {p.device_enroll_no != null && <> · machine no. {p.device_enroll_no}</>}
+              {" · asked "}
+              {p.joined_on
+                ? new Date(p.joined_on).toLocaleDateString("en-IN", { day: "numeric", month: "short" })
+                : "recently"}
+            </div>
+          </div>
+          <div className="acts">
+            <input
+              className="enroll-input"
+              type="number"
+              placeholder="salary ₹"
+              value={pendingSalary[p.id] ?? ""}
+              onChange={(e) => setPendingSalary({ ...pendingSalary, [p.id]: e.target.value })}
+            />
+            <button className="btn good" onClick={() => approveJoin(p)}>Approve</button>
+            <button className="btn soft" onClick={() => rejectJoin(p)}>Reject</button>
+          </div>
+        </div>
+      ))}
+
+      <div className="actions">
+        <button className="btn primary" onClick={() => { setShowForm(!showForm); setBulkOpen(false); }}>
+          {showForm ? "Close" : "+ Add staff member"}
+        </button>
+        <button className="btn" onClick={() => { setBulkOpen(!bulkOpen); setShowForm(false); }}>
+          {bulkOpen ? "Close bulk add" : "⇪ Bulk add (paste list)"}
+        </button>
+      </div>
+
+      {bulkOpen && (
+        <div className="card">
+          <p className="muted" style={{ marginBottom: 10 }}>
+            One person per line: <strong>Name, mobile number, machine no.</strong> —
+            e.g. <code>Surojit Majumder, 9830012345, 70</code>. Machine no. is optional.
+            PINs are generated automatically and shown once after creating.
+          </p>
+          <textarea
+            className="bulk-input"
+            rows={8}
+            placeholder={"Surojit Majumder, 9830012345, 70\nDeep Sarkar, 9830054321, 71"}
+            value={bulkText}
+            onChange={(e) => setBulkText(e.target.value)}
+          />
+          {bulkRows.length > 0 && (
+            <>
+              <table>
+                <thead>
+                  <tr><th>Name</th><th>Mobile</th><th>Machine no.</th><th>Check</th></tr>
+                </thead>
+                <tbody>
+                  {bulkRows.map((r, i) => (
+                    <tr key={i}>
+                      <td>{r.full_name}</td>
+                      <td>{r.phone || "—"}</td>
+                      <td>{r.device_enroll_no ?? "—"}</td>
+                      <td>
+                        {r.problem
+                          ? <span className="pill serious">{r.problem}</span>
+                          : <span className="pill good">Ready</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="actions" style={{ marginTop: 12 }}>
+                <button
+                  className="btn primary"
+                  disabled={bulkBusy || bulkRows.some((r) => r.problem !== null)}
+                  onClick={runBulk}
+                >
+                  {bulkBusy
+                    ? "Creating…"
+                    : `Create ${bulkRows.length} worker${bulkRows.length > 1 ? "s" : ""}`}
+                </button>
+                {bulkRows.some((r) => r.problem !== null) && (
+                  <span className="muted">Fix the rows marked red first.</span>
+                )}
+              </div>
+            </>
+          )}
+          {bulkResults.length > 0 && (
+            <>
+              <h2>Login details — save this list now (PINs are shown only once)</h2>
+              <table>
+                <thead>
+                  <tr><th>Name</th><th>Mobile (login)</th><th>PIN</th><th>Code</th><th>Result</th></tr>
+                </thead>
+                <tbody>
+                  {bulkResults.map((r, i) => (
+                    <tr key={i}>
+                      <td>{r.full_name}</td>
+                      <td>{r.phone ?? "—"}</td>
+                      <td><strong>{r.pin ?? "—"}</strong></td>
+                      <td>{r.employee_code ?? "—"}</td>
+                      <td>
+                        {r.ok
+                          ? <span className="pill good">Created ✓</span>
+                          : <span className="pill serious">{r.error}</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <button className="btn" style={{ marginTop: 10 }} onClick={downloadCredentials}>
+                ⬇ Download this list (CSV)
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {showForm && (
         <form className="card form-grid" onSubmit={addWorker}>
           <label>
-            Employee code
-            <input value={form.employee_code} onChange={set("employee_code")} placeholder="W02" required />
-          </label>
-          <label>
             Full name
             <input value={form.full_name} onChange={set("full_name")} placeholder="Full name" required />
+          </label>
+          <label>
+            Mobile number (their app login)
+            <input
+              value={form.phone}
+              onChange={set("phone")}
+              placeholder="10-digit number"
+              maxLength={10}
+              required
+            />
           </label>
           <label>
             6-digit PIN
             <input value={form.pin} onChange={set("pin")} placeholder="e.g. 428913" maxLength={6} required />
           </label>
           <label>
-            Phone (optional)
-            <input value={form.phone} onChange={set("phone")} placeholder="98300xxxxx" />
+            Staff code (optional — auto if empty)
+            <input value={form.employee_code} onChange={set("employee_code")} placeholder="W02" />
           </label>
           <label>
             Monthly salary (₹)
@@ -183,13 +418,6 @@ export default function Staff() {
             Branch
             <select value={form.branch_id} onChange={set("branch_id")}>
               {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </select>
-          </label>
-          <label>
-            Shift
-            <select value={form.shift_id} onChange={set("shift_id")}>
-              <option value="">— none yet —</option>
-              {shifts.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </label>
           <button className="btn primary" type="submit" disabled={busy}>
@@ -211,10 +439,13 @@ export default function Staff() {
           </tr>
         </thead>
         <tbody>
-          {staff.map((row) => (
+          {staff.filter((s) => s.active || s.approved_at).map((row) => (
             <tr key={row.id} className={row.active ? "" : "inactive"}>
               <td>{row.employee_code}</td>
-              <td>{row.full_name}{!row.active && " (inactive)"}</td>
+              <td>
+                {row.full_name}{!row.active && " (inactive)"}
+                {row.phone && <div className="note muted">{row.phone}</div>}
+              </td>
               <td>{row.role}</td>
               <td>{row.role === "worker" ? `₹${row.base_salary}` : "—"}</td>
               <td>
@@ -236,6 +467,7 @@ export default function Staff() {
                 {row.role !== "owner" && pendingAction?.id !== row.id && (
                   <>
                     <button className="btn small" onClick={() => setPendingAction({ id: row.id, kind: "reset_pin" })}>Reset PIN</button>
+                    <button className="btn small" onClick={() => setPendingAction({ id: row.id, kind: "change_phone" })}>Change no.</button>
                     {row.device_id && (
                       <button className="btn small" onClick={() => setPendingAction({ id: row.id, kind: "clear_device" })}>New phone</button>
                     )}
@@ -262,6 +494,23 @@ export default function Staff() {
                           onClick={() => runAction(row, "reset_pin")}
                         >
                           Set PIN
+                        </button>
+                      </>
+                    ) : pendingAction.kind === "change_phone" ? (
+                      <>
+                        <input
+                          className="note-input"
+                          placeholder="new mobile number"
+                          maxLength={10}
+                          value={newPhone}
+                          onChange={(e) => setNewPhone(e.target.value.replace(/\D/g, ""))}
+                        />
+                        <button
+                          className="btn small primary"
+                          disabled={!/^[6-9]\d{9}$/.test(newPhone)}
+                          onClick={() => runAction(row, "change_phone")}
+                        >
+                          Save
                         </button>
                       </>
                     ) : (

@@ -29,6 +29,9 @@ export type Profile = {
   shift_id: string | null;
   device_id: string | null;
   base_salary: number;
+  phone: string | null;
+  active: boolean;
+  approved_at: string | null;
 };
 
 export type Branch = {

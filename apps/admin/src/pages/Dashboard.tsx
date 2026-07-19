@@ -73,12 +73,13 @@ export default function Dashboard() {
       supabase.from("devices").select("serial, last_seen_at"),
       supabase
         .from("advances")
-        .select("id, profile_id, amount, reason, profiles(full_name)")
+        .select("id, profile_id, amount, reason, profiles!advances_profile_id_fkey(full_name)")
         .eq("status", "PENDING")
         .order("created_at"),
       supabase.from("advance_balances").select("profile_id, balance"),
     ]);
     if (att.error) setError(att.error.message);
+    if (adv.error) setError(adv.error.message);
     setRows((att.data as unknown as DayRow[]) ?? []);
 
     const af: Record<string, string> = {};
