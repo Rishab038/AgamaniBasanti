@@ -46,6 +46,13 @@ type Punch = {
 async function knownDevice(serial: string): Promise<boolean> {
   const { data } = await supabase
     .from("devices").select("id").eq("serial", serial).maybeSingle();
+  if (data === null) {
+    // The #1 setup-day failure is the device reporting a serial that
+    // differs from the sticker (case, prefix, trailing chars). Record it
+    // so the Settings page can offer it for one-click registration.
+    console.log(`REJECTED unknown serial: "${serial}"`);
+    await supabase.rpc("fn_record_device_attempt", { p_serial: serial });
+  }
   return data !== null;
 }
 

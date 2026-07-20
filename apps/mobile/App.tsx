@@ -13,6 +13,7 @@ import { Branch, Profile, supabase } from "./src/lib/supabase";
 import LoginScreen from "./src/screens/LoginScreen";
 import MainScreen from "./src/screens/MainScreen";
 import PendingScreen from "./src/screens/PendingScreen";
+import ConsentScreen from "./src/screens/ConsentScreen";
 
 export default function App() {
   const [fontsLoaded] = useFonts({
@@ -80,6 +81,8 @@ export default function App() {
       <StatusBar style="dark" />
       {session && profile && !profile.active ? (
         <PendingScreen profile={profile} onApproved={setProfile} />
+      ) : session && profile && profile.role === "worker" && !profile.consent_at ? (
+        <ConsentScreen profile={profile} onAccepted={setProfile} />
       ) : session && profile && branch ? (
         <MainScreen profile={profile} branch={branch} />
       ) : (

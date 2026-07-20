@@ -1,5 +1,8 @@
-// Shown after self-registration until the owner taps Approve.
-// The worker can re-check or log out; nothing else works yet.
+// Shown to any inactive account. Two very different situations:
+//   approved_at null -> newly joined, waiting for the owner's approval
+//   approved_at set  -> previously approved, since deactivated
+// Telling an ex-employee "your request has reached the owner" would be
+// misleading, so the copy branches.
 
 import { useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
@@ -15,6 +18,7 @@ export default function PendingScreen({
 }) {
   const [checking, setChecking] = useState(false);
   const [stillWaiting, setStillWaiting] = useState(false);
+  const deactivated = profile.approved_at !== null;
 
   const recheck = async () => {
     setChecking(true);
@@ -29,13 +33,14 @@ export default function PendingScreen({
   return (
     <View style={styles.root}>
       <View style={[styles.card, shadow.card]}>
-        <View style={styles.clockCircle}>
-          <Text style={styles.clockGlyph}>⏳</Text>
+        <View style={[styles.clockCircle, deactivated && styles.pausedCircle]}>
+          <Text style={styles.clockGlyph}>{deactivated ? "🔒" : "⏳"}</Text>
         </View>
         <Text style={styles.title}>Namaste, {profile.full_name.split(" ")[0]}!</Text>
         <Text style={styles.body}>
-          Your request has reached the owner. Once they approve it, you can start
-          marking your attendance here.
+          {deactivated
+            ? "Your attendance account is paused right now. Please speak to the shop owner."
+            : "Your request has reached the owner. Once they approve it, you can start marking your attendance here."}
         </Text>
         <Pressable style={styles.button} onPress={recheck} disabled={checking}>
           {checking
@@ -43,7 +48,11 @@ export default function PendingScreen({
             : <Text style={styles.buttonText}>Check again</Text>}
         </Pressable>
         {stillWaiting && (
-          <Text style={styles.waiting}>Not approved yet — try again in a while.</Text>
+          <Text style={styles.waiting}>
+            {deactivated
+              ? "Still paused — please check with the owner."
+              : "Not approved yet — try again in a while."}
+          </Text>
         )}
       </View>
       <Pressable onPress={() => supabase.auth.signOut()}>
@@ -72,6 +81,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 16,
   },
+  pausedCircle: { backgroundColor: colors.roseBg },
   clockGlyph: { fontSize: 34 },
   title: { fontFamily: fonts.black, fontSize: 23, color: colors.ink, textAlign: "center" },
   body: {

@@ -32,6 +32,7 @@ export type Profile = {
   phone: string | null;
   active: boolean;
   approved_at: string | null;
+  consent_at: string | null;
 };
 
 export type Branch = {

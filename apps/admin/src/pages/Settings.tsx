@@ -34,6 +34,26 @@ type Device = {
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+/**
+ * Whole-number input handler.
+ * Typing "0" in front of "100" yields raw "0100"; Number() maps that back to
+ * 100, so React sees no state change, skips the re-render, and the stale
+ * "0100" text stays on screen. Normalising the DOM value here keeps what is
+ * displayed identical to what is stored.
+ */
+function intFieldHandler(apply: (n: number) => void, maxDigits = 5) {
+  return (e: React.ChangeEvent<HTMLInputElement>) => {
+    // order matters: strip leading zeros BEFORE truncating, or "00100"
+    // truncates to "0010" and then reads as 10
+    const normalized = e.target.value
+      .replace(/\D/g, "")
+      .replace(/^0+(?=\d)/, "") // drop leading zeros, keep a lone "0"
+      .slice(0, maxDigits);
+    e.target.value = normalized;
+    apply(normalized === "" ? 0 : parseInt(normalized, 10));
+  };
+}
+
 export default function Settings() {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [shifts, setShifts] = useState<Shift[]>([]);
@@ -44,15 +64,18 @@ export default function Settings() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [newDevice, setNewDevice] = useState({ serial: "", model: "" });
   const [joinCode, setJoinCode] = useState<string | null>(null);
+  const [attempts, setAttempts] = useState<{ serial: string; last_seen: string; hits: number }[]>([]);
 
   const load = async () => {
-    const [b, s, h, d, jc] = await Promise.all([
+    const [b, s, h, d, jc, at] = await Promise.all([
       supabase.from("branches").select("*").order("created_at"),
       supabase.from("shifts").select("*").order("start_time"),
       supabase.from("holidays").select("*").gte("on_date", new Date().toISOString().slice(0, 10)).order("on_date"),
       supabase.from("devices").select("id, serial, model, last_seen_at"),
       supabase.from("app_settings").select("value").eq("key", "shop_join_code").maybeSingle(),
+      supabase.from("device_attempts").select("serial, last_seen, hits").order("last_seen", { ascending: false }),
     ]);
+    setAttempts(at.data ?? []);
     setBranches(b.data ?? []);
     setShifts(s.data ?? []);
     setHolidays(h.data ?? []);
@@ -159,8 +182,8 @@ export default function Settings() {
           <label>
             Check-in radius (metres)
             <input
-              type="number" value={b.radius_m}
-              onChange={(e) => editBranch(b.id, { radius_m: Number(e.target.value) })}
+              type="text" inputMode="numeric" value={b.radius_m}
+              onChange={intFieldHandler((n) => editBranch(b.id, { radius_m: n }), 4)}
             />
           </label>
           <label>
@@ -197,8 +220,8 @@ export default function Settings() {
           </label>
           <label>
             Late after (minutes)
-            <input type="number" value={s.grace_minutes}
-              onChange={(e) => editShift(s.id, { grace_minutes: Number(e.target.value) })} />
+            <input type="text" inputMode="numeric" value={s.grace_minutes}
+              onChange={intFieldHandler((n) => editShift(s.id, { grace_minutes: n }), 3)} />
           </label>
           <div className="weekoff">
             <span>Weekly off:</span>
@@ -244,6 +267,38 @@ export default function Settings() {
       </div>
 
       <h2>Fingerprint machine</h2>
+
+      {attempts.filter((a) => !devices.some((d) => d.serial === a.serial)).map((a) => (
+        <div className="banner warn" key={a.serial} style={{ cursor: "default" }}>
+          <span style={{ flex: 1 }}>
+            A machine with serial <strong>{a.serial}</strong> is trying to connect
+            ({a.hits} time{a.hits > 1 ? "s" : ""}, last{" "}
+            {new Date(a.last_seen).toLocaleTimeString("en-IN", {
+              hour: "numeric", minute: "2-digit",
+            })}
+            ) but is not registered yet.
+          </span>
+          <button
+            className="btn small primary"
+            onClick={async () => {
+              if (branches.length === 0) return;
+              const { error: err } = await supabase.from("devices").insert({
+                branch_id: branches[0].id,
+                serial: a.serial,
+                model: "Realtime T304F Mini",
+              });
+              if (err) setError(err.message);
+              else {
+                flash(`Machine ${a.serial} registered — its punches will now be accepted.`);
+                await load();
+              }
+            }}
+          >
+            Register this machine
+          </button>
+        </div>
+      ))}
+
       <form
         className="card holiday-row"
         onSubmit={async (e) => {

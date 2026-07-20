@@ -1,3 +1,10 @@
+// SUPERSEDED — the live proxy is now a Cloudflare Pages Function at
+// apps/admin/functions/iclock/[[path]].js, serving on the dashboard's
+// existing domain (agamani-admin.pages.dev). That avoids having to
+// register a workers.dev subdomain, which this file required.
+// Kept only for the case where a separate custom domain is needed
+// (e.g. a device that refuses HTTPS).
+//
 // ADMS proxy — free Cloudflare Worker.
 //
 // Why this exists: ADMS fingerprint machines only let you configure
