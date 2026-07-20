@@ -229,7 +229,18 @@ input:focus, select:focus {
 }
 .logout:hover { background: rgba(255, 255, 255, 0.07); color: #f5ede4; }
 
-.content { flex: 1; padding: 36px 42px 60px; max-width: 1180px; }
+/* Full-bleed: tables and cards use the whole window rather than sitting
+   in a 1180px column with dead space beside them. Padding scales up on
+   large monitors so the content still has margins to breathe. */
+.content {
+  flex: 1;
+  min-width: 0;              /* lets flex children shrink instead of overflowing */
+  padding: 36px 42px 60px;
+}
+
+@media (min-width: 1600px) {
+  .content { padding: 40px 64px 72px; }
+}
 .page { animation: rise-in 280ms var(--ease); }
 .page-head { margin-bottom: 22px; display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .page-head p { color: var(--ink-3); margin-top: 3px; font-size: 14px; font-weight: 600; }
@@ -473,6 +484,130 @@ td { font-size: 14.5px; font-weight: 600; }
 }
 .enroll-input:hover { border-color: var(--line-2); background: var(--surface); }
 .enroll-input:focus { background: var(--surface); }
+
+/* ============================================================
+   WIDE MONITORS
+   Full-bleed means a stat tile can be ~700px holding a single digit,
+   which reads as empty space rather than emphasis. Past this width the
+   tile becomes a horizontal bar — number and label on one baseline — so
+   it fills the row deliberately instead of merely stretching.
+   (Must come after the base .stat rules: media queries add no
+   specificity, so source order decides.)
+   ============================================================ */
+@media (min-width: 1400px) {
+  .stat {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 14px;
+    padding: 18px 26px;
+  }
+  .stat .value { font-size: 40px; line-height: 1; }
+  .stat .label { font-size: 15px; }
+}
+
+/* ============================================================
+   PHONES
+   The owner checks Today and Approvals from their phone constantly;
+   Staff and Salary are desk work. So the shell reflows rather than
+   hiding anything: the sidebar becomes a scrollable strip of pills,
+   and wide tables scroll inside themselves instead of pushing the
+   page sideways.
+   ============================================================ */
+@media (max-width: 860px) {
+  body { font-size: 15px; }
+
+  /* ---- shell: sidebar on top, not beside ---- */
+  .shell { flex-direction: column; }
+  .sidebar {
+    width: 100%;
+    height: auto;
+    position: static;
+    padding: 14px 12px 10px;
+    gap: 10px;
+  }
+  .brand { padding: 0 4px 12px; }
+  .brand .brand-mark { width: 34px; height: 34px; font-size: 15px; }
+  .brand .name { font-size: 16px; }
+
+  /* nav becomes a horizontally scrollable row of pills */
+  .sidebar nav {
+    flex-direction: row;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scrollbar-width: none;
+  }
+  .sidebar nav::-webkit-scrollbar { display: none; }
+  .nav {
+    flex: 0 0 auto;
+    padding: 9px 14px;
+    border-radius: 999px;
+    font-size: 14px;
+    background: rgba(255, 255, 255, 0.06);
+  }
+  .nav.active { box-shadow: none; }
+  .logout {
+    position: absolute;
+    top: 16px;
+    right: 12px;
+    padding: 8px 12px;
+    font-size: 12.5px;
+  }
+  .logout svg { display: none; }
+
+  .content { padding: 20px 16px 44px; max-width: 100%; }
+  h1 { font-size: 23px; }
+  .page-head { margin-bottom: 16px; }
+
+  /* ---- tables scroll themselves; the page never does ----
+     Cells are allowed to wrap so narrow tables (Today: 4 columns) fit
+     the screen outright and only genuinely wide ones (Staff: 7) scroll.
+     Forcing nowrap pushed Today 88px past the edge, hiding the Status
+     column — the one thing the owner opens the page for. Pills and
+     times keep their own nowrap so they never break mid-value. */
+  table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  th, td { padding: 10px 10px; }
+  td { font-size: 14px; }
+  th { font-size: 10.5px; letter-spacing: 0.04em; }
+
+  /* ---- forms and tiles stack ---- */
+  .form-grid, .edit-panel { grid-template-columns: 1fr; gap: 12px; }
+  .stats { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .stat { padding: 14px 16px; }
+  .stat .value { font-size: 26px; }
+  .card { padding: 16px; border-radius: 14px; }
+  .login-card { width: 100%; max-width: 400px; padding: 32px 24px; }
+
+  /* filter rows and toolbars wrap instead of overflowing */
+  .filter-row, .holiday-row, .toolbar { gap: 10px; }
+  .filter-row label, .holiday-row input { flex: 1 1 140px; }
+  .toolbar-count { margin-left: 0; width: 100%; }
+
+  /* approval cards stack their actions under the text */
+  .approval-card { flex-direction: column; align-items: stretch; gap: 12px; }
+  .approval-card .acts { flex-wrap: wrap; }
+  .approval-card .acts .btn { flex: 1 1 auto; justify-content: center; }
+
+  /* a right-anchored menu can hang off a narrow screen */
+  .menu { min-width: 200px; max-width: calc(100vw - 32px); }
+
+  .join-code { font-size: 24px; letter-spacing: 5px; padding: 8px 14px; }
+}
+
+@media (max-width: 420px) {
+  /* keep two tiles per row — Today is the screen the owner opens most,
+     and three stacked tiles push the attendance table below the fold */
+  .stats { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .stat { padding: 12px 14px; }
+  .stat .value { font-size: 23px; }
+  .stat .label { font-size: 12.5px; }
+  .content { padding: 16px 12px 40px; }
+  .btn { padding: 9px 14px; font-size: 13.5px; }
+}
 
 .edit-cell { background: #fdfaf5; padding: 0 !important; }
 .edit-panel {
