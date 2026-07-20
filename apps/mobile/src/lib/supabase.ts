@@ -33,6 +33,9 @@ export type Profile = {
   active: boolean;
   approved_at: string | null;
   consent_at: string | null;
+  shift_start: string | null;
+  shift_end: string | null;
+  lunch_minutes: number;
 };
 
 export type Branch = {

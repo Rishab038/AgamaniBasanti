@@ -20,7 +20,20 @@ type StaffRow = {
   joined_on: string | null;
   branch_id: string;
   shift_id: string | null;
+  employment_type: "NO_PAY_NO_WORK" | "CONTRACT" | "PF" | null;
+  shift_start: string | null;
+  shift_end: string | null;
+  lunch_minutes: number;
 };
+
+const EMPLOYMENT_LABEL: Record<string, string> = {
+  NO_PAY_NO_WORK: "No pay no work",
+  CONTRACT: "Contract",
+  PF: "PF",
+};
+
+/** "10:30:00" -> "10:30"; null-safe */
+const hhmm = (t: string | null) => (t ? t.slice(0, 5) : "");
 
 type Option = { id: string; name: string };
 
@@ -258,6 +271,9 @@ export default function Staff() {
   // ---- self-registration approvals ----
   const [pendingSalary, setPendingSalary] = useState<Record<string, string>>({});
   const pendingJoins = staff.filter((s) => !s.active && !s.approved_at);
+  const noSalaryCount = staff.filter(
+    (s) => s.role === "worker" && s.active && Number(s.base_salary) <= 0,
+  ).length;
 
   const approveJoin = async (row: StaffRow) => {
     setError(null);
@@ -286,20 +302,27 @@ export default function Staff() {
   };
 
   // ---- edit a staff member's details ----
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({
     full_name: "", base_salary: 0, joined_on: "", employee_code: "",
+    employment_type: "", shift_start: "", shift_end: "", lunch_minutes: 60,
   });
   const [editBusy, setEditBusy] = useState(false);
 
   const startEdit = (row: StaffRow) => {
     setPendingAction(null);
+    setOpenMenu(null);
     setEditingId(row.id);
     setEditForm({
       full_name: row.full_name,
       base_salary: Number(row.base_salary) || 0,
       joined_on: row.joined_on ?? "",
       employee_code: row.employee_code,
+      employment_type: row.employment_type ?? "",
+      shift_start: hhmm(row.shift_start),
+      shift_end: hhmm(row.shift_end),
+      lunch_minutes: row.lunch_minutes ?? 60,
     });
   };
 
@@ -316,6 +339,10 @@ export default function Staff() {
       base_salary: editForm.base_salary,
       joined_on: editForm.joined_on || null,
       employee_code: editForm.employee_code.trim().toUpperCase(),
+      employment_type: editForm.employment_type || null,
+      shift_start: editForm.shift_start || null,
+      shift_end: editForm.shift_end || null,
+      lunch_minutes: editForm.lunch_minutes,
       updated_at: new Date().toISOString(),
     }).eq("id", row.id);
     setEditBusy(false);
@@ -350,6 +377,15 @@ export default function Staff() {
       {notice && <div className="banner info" onClick={() => setNotice(null)}>{notice}</div>}
       {error && <div className="banner error" onClick={() => setError(null)}>{error}</div>}
 
+      {/* one actionable line instead of "₹0" repeated down the table */}
+      {noSalaryCount > 0 && (
+        <div className="banner warn" style={{ cursor: "default" }}>
+          {noSalaryCount} staff {noSalaryCount === 1 ? "member has" : "members have"} no salary
+          set yet — payroll will calculate ₹0 for {noSalaryCount === 1 ? "them" : "them"} until
+          you add it.
+        </div>
+      )}
+
       {pendingJoins.map((p) => (
         <div className="approval-card" key={p.id}>
           <div>
@@ -377,16 +413,34 @@ export default function Staff() {
         </div>
       ))}
 
-      <div className="actions">
-        <button className="btn primary" onClick={() => { setShowForm(!showForm); setBulkOpen(false); }}>
+      <div className="actions toolbar">
+        <button
+          className="btn primary"
+          onClick={() => { setShowForm(!showForm); setBulkOpen(false); setAdminOpen(false); }}
+        >
           {showForm ? "Close" : "+ Add staff member"}
         </button>
-        <button className="btn" onClick={() => { setBulkOpen(!bulkOpen); setShowForm(false); setAdminOpen(false); }}>
-          {bulkOpen ? "Close bulk add" : "⇪ Bulk add (paste list)"}
-        </button>
-        <button className="btn" onClick={() => { setAdminOpen(!adminOpen); setShowForm(false); setBulkOpen(false); }}>
-          {adminOpen ? "Close" : "🔑 Add manager"}
-        </button>
+        <div className="menu-wrap">
+          <button className="btn" onClick={() => setOpenMenu(openMenu === "toolbar" ? null : "toolbar")}>
+            More <span className="caret">▾</span>
+          </button>
+          {openMenu === "toolbar" && (
+            <>
+              <div className="menu-backdrop" onClick={() => setOpenMenu(null)} />
+              <div className="menu">
+                <button onClick={() => { setOpenMenu(null); setBulkOpen(true); setShowForm(false); setAdminOpen(false); }}>
+                  Add many at once (paste a list)
+                </button>
+                <button onClick={() => { setOpenMenu(null); setAdminOpen(true); setShowForm(false); setBulkOpen(false); }}>
+                  Add a manager login
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+        <span className="toolbar-count">
+          {staff.filter((s) => s.role === "worker" && s.active).length} active staff
+        </span>
       </div>
 
       {adminOpen && (
@@ -567,7 +621,7 @@ export default function Staff() {
           <tr>
             <th>Code</th>
             <th>Name</th>
-            <th>Role</th>
+            <th>Type</th>
             <th>Salary</th>
             <th>Machine no.</th>
             <th>Phone app</th>
@@ -581,13 +635,31 @@ export default function Staff() {
               <td>{row.employee_code}</td>
               <td>
                 {row.full_name}{!row.active && " (inactive)"}
-                {row.phone && <div className="note muted">{row.phone}</div>}
+                {(row.phone || row.shift_start) && (
+                  <div className="note muted">
+                    {row.phone}
+                    {row.phone && row.shift_start && " · "}
+                    {row.shift_start && `${hhmm(row.shift_start)}–${hhmm(row.shift_end)}`}
+                  </div>
+                )}
               </td>
-              <td>{row.role}</td>
               <td>
-                {row.role === "worker"
-                  ? `₹${Number(row.base_salary).toLocaleString("en-IN")}`
-                  : "—"}
+                {row.role !== "worker" ? (
+                  <span className="pill neutral">{row.role}</span>
+                ) : row.employment_type ? (
+                  EMPLOYMENT_LABEL[row.employment_type]
+                ) : (
+                  <button className="link-btn" onClick={() => startEdit(row)}>Set type</button>
+                )}
+              </td>
+              <td>
+                {row.role !== "worker" ? (
+                  <span className="dash">—</span>
+                ) : Number(row.base_salary) > 0 ? (
+                  `₹${Number(row.base_salary).toLocaleString("en-IN")}`
+                ) : (
+                  <button className="link-btn" onClick={() => startEdit(row)}>Set salary</button>
+                )}
               </td>
               <td>
                 {row.role === "worker" ? (
@@ -603,33 +675,61 @@ export default function Staff() {
                   />
                 ) : "—"}
               </td>
-              <td>{row.device_id ? "✅ linked" : "—"}</td>
+              <td>
+                {row.device_id
+                  ? <span className="pill good">Linked</span>
+                  : <span className="dash">—</span>}
+              </td>
               <td className="actions">
                 {pendingAction?.id !== row.id && (
-                  row.role === "worker" ? (
-                    <>
-                      <button className="btn small" onClick={() => startEdit(row)}>Edit</button>
-                      <button className="btn small" onClick={() => setPendingAction({ id: row.id, kind: "set_pin" })}>Reset PIN</button>
-                      <button className="btn small" onClick={() => setPendingAction({ id: row.id, kind: "change_phone" })}>Change no.</button>
-                      {row.device_id && (
-                        <button className="btn small" onClick={() => setPendingAction({ id: row.id, kind: "clear_device" })}>New phone</button>
-                      )}
-                      <button className="btn small" onClick={() => setPendingAction({ id: row.id, kind: "toggle_active" })}>
-                        {row.active ? "Deactivate" : "Activate"}
-                      </button>
-                      <button className="btn small danger" onClick={() => setPendingAction({ id: row.id, kind: "delete" })}>Delete</button>
-                    </>
-                  ) : (
-                    <>
-                      <button className="btn small" onClick={() => startEdit(row)}>Edit</button>
-                      <button className="btn small" onClick={() => setPendingAction({ id: row.id, kind: "set_password" })}>
-                        Change password
-                      </button>
-                      <button className="btn small danger" onClick={() => setPendingAction({ id: row.id, kind: "delete" })}>
-                        Delete
-                      </button>
-                    </>
-                  )
+                  <div className="menu-wrap">
+                    <button
+                      className="btn small menu-trigger"
+                      aria-label={`Actions for ${row.full_name}`}
+                      onClick={() => setOpenMenu(openMenu === row.id ? null : row.id)}
+                    >
+                      Manage <span className="caret">▾</span>
+                    </button>
+                    {openMenu === row.id && (
+                      <>
+                        <div className="menu-backdrop" onClick={() => setOpenMenu(null)} />
+                        <div className="menu">
+                          <button onClick={() => { setOpenMenu(null); startEdit(row); }}>
+                            Edit details
+                          </button>
+                          {row.role === "worker" ? (
+                            <>
+                              <button onClick={() => { setOpenMenu(null); setPendingAction({ id: row.id, kind: "set_pin" }); }}>
+                                Reset PIN
+                              </button>
+                              <button onClick={() => { setOpenMenu(null); setPendingAction({ id: row.id, kind: "change_phone" }); }}>
+                                Change mobile number
+                              </button>
+                              {row.device_id && (
+                                <button onClick={() => { setOpenMenu(null); setPendingAction({ id: row.id, kind: "clear_device" }); }}>
+                                  Allow a new phone
+                                </button>
+                              )}
+                              <button onClick={() => { setOpenMenu(null); setPendingAction({ id: row.id, kind: "toggle_active" }); }}>
+                                {row.active ? "Deactivate" : "Activate"}
+                              </button>
+                            </>
+                          ) : (
+                            <button onClick={() => { setOpenMenu(null); setPendingAction({ id: row.id, kind: "set_password" }); }}>
+                              Change password
+                            </button>
+                          )}
+                          <div className="menu-sep" />
+                          <button
+                            className="danger"
+                            onClick={() => { setOpenMenu(null); setPendingAction({ id: row.id, kind: "delete" }); }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
                 )}
                 {pendingAction?.id === row.id && (
                   <>
@@ -742,6 +842,52 @@ export default function Staff() {
                         onChange={(e) => setEditForm({ ...editForm, joined_on: e.target.value })}
                       />
                     </label>
+                    {row.role === "worker" && (
+                      <>
+                        <label>
+                          Staff type
+                          <select
+                            value={editForm.employment_type}
+                            onChange={(e) =>
+                              setEditForm({ ...editForm, employment_type: e.target.value })}
+                          >
+                            <option value="">— not set —</option>
+                            <option value="NO_PAY_NO_WORK">No pay no work</option>
+                            <option value="CONTRACT">Contract</option>
+                            <option value="PF">PF</option>
+                          </select>
+                        </label>
+                        <label>
+                          Shift starts
+                          <input
+                            type="time"
+                            value={editForm.shift_start}
+                            onChange={(e) =>
+                              setEditForm({ ...editForm, shift_start: e.target.value })}
+                          />
+                        </label>
+                        <label>
+                          Shift ends
+                          <input
+                            type="time"
+                            value={editForm.shift_end}
+                            onChange={(e) =>
+                              setEditForm({ ...editForm, shift_end: e.target.value })}
+                          />
+                        </label>
+                        <label>
+                          Lunch break (minutes)
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={editForm.lunch_minutes}
+                            onChange={intFieldHandler(
+                              (n) => setEditForm((f) => ({ ...f, lunch_minutes: n })), 3,
+                            )}
+                          />
+                        </label>
+                      </>
+                    )}
                     <div className="actions">
                       <button
                         className="btn primary"
@@ -756,7 +902,9 @@ export default function Staff() {
                       <p className="muted" style={{ gridColumn: "1 / -1", margin: 0, fontSize: 13 }}>
                         Salary changes apply to payroll from now on — payslips already
                         confirmed keep the figure they were calculated with. To change their
-                        mobile number use "Change no." (it is also their app login).
+                        mobile number use Manage → Change mobile number (it is also their
+                        app login). Setting a shift start makes late arrivals show on the
+                        Today page; leave it empty and lateness is never flagged.
                       </p>
                     )}
                   </div>

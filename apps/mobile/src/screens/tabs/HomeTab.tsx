@@ -171,8 +171,9 @@ export default function HomeTab({
   };
 
   const initials = profile.full_name.trim()[0]?.toUpperCase() ?? "?";
-  const shiftLine = data.shift
-    ? ` · Shift ${fmtShiftTime(data.shift.start_time)} – ${fmtShiftTime(data.shift.end_time)}`
+  // each worker now carries their own timings, set by the owner
+  const shiftLine = profile.shift_start
+    ? ` · Shift ${fmtShiftTime(profile.shift_start)} – ${fmtShiftTime(profile.shift_end ?? "")}`
     : "";
 
   return (

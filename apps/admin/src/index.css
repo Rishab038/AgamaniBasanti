@@ -339,7 +339,7 @@ table {
   margin-top: 14px;
   animation: rise-in 300ms var(--ease);
 }
-th, td { padding: 14px 18px; text-align: left; vertical-align: middle; }
+th, td { padding: 11px 16px; text-align: left; vertical-align: middle; }
 th {
   font-size: 11.5px;
   font-weight: 800;
@@ -370,7 +370,7 @@ td { font-size: 14.5px; font-weight: 600; }
 .pill.info { color: var(--good); background: var(--good-bg); }
 
 /* ---------- misc ---------- */
-.actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .inactive td { color: var(--ink-3); }
 .enroll-input { width: 92px; padding: 7px 9px; font-size: 13px; }
 .note-input { width: 160px; padding: 7px 9px; font-size: 13px; }
@@ -397,6 +397,83 @@ td { font-size: 14.5px; font-weight: 600; }
   resize: vertical;
 }
 .bulk-input:focus { outline: none; border-color: var(--accent); }
+/* ---------- row action menu ----------
+   A table of 36 staff once carried ~180 buttons; collapsing each row's
+   actions into one trigger is the difference between a control panel and
+   a wall of noise. */
+.menu-wrap { position: relative; display: inline-block; }
+.menu-trigger { white-space: nowrap; }
+.caret { font-size: 10px; opacity: 0.6; }
+.menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+}
+.menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 21;
+  min-width: 220px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-3);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  animation: slide-down 140ms var(--ease);
+}
+.menu button {
+  text-align: left;
+  background: none;
+  border: none;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  padding: 10px 12px;
+  border-radius: 9px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 120ms var(--ease);
+}
+.menu button:hover { background: #fdf3ec; color: var(--accent-deep); }
+.menu button.danger { color: var(--serious); }
+.menu button.danger:hover { background: var(--serious-bg); }
+.menu-sep { height: 1px; background: var(--line); margin: 5px 8px; }
+
+/* ---------- toolbar ---------- */
+.toolbar { align-items: center; margin-bottom: 4px; }
+.toolbar-count { margin-left: auto; color: var(--ink-3); font-size: 13.5px; font-weight: 700; }
+
+/* ---------- quieter table chrome ---------- */
+.dash { color: var(--ink-3); }
+.link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--accent);
+  cursor: pointer;
+  border-bottom: 1px dashed currentColor;
+}
+.link-btn:hover { color: var(--accent-deep); }
+
+/* machine-number field: reads as text until you interact with it, so 36
+   rows of inputs stop looking like a form */
+.enroll-input {
+  width: 74px;
+  padding: 6px 8px;
+  font-size: 13.5px;
+  border-color: transparent;
+  background: #f7f1e8;
+}
+.enroll-input:hover { border-color: var(--line-2); background: var(--surface); }
+.enroll-input:focus { background: var(--surface); }
+
 .edit-cell { background: #fdfaf5; padding: 0 !important; }
 .edit-panel {
   display: grid;
