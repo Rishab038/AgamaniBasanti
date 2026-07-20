@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { intFieldHandler } from "../lib/intField";
 
 type Branch = {
   id: string;
@@ -33,26 +34,6 @@ type Device = {
 };
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-/**
- * Whole-number input handler.
- * Typing "0" in front of "100" yields raw "0100"; Number() maps that back to
- * 100, so React sees no state change, skips the re-render, and the stale
- * "0100" text stays on screen. Normalising the DOM value here keeps what is
- * displayed identical to what is stored.
- */
-function intFieldHandler(apply: (n: number) => void, maxDigits = 5) {
-  return (e: React.ChangeEvent<HTMLInputElement>) => {
-    // order matters: strip leading zeros BEFORE truncating, or "00100"
-    // truncates to "0010" and then reads as 10
-    const normalized = e.target.value
-      .replace(/\D/g, "")
-      .replace(/^0+(?=\d)/, "") // drop leading zeros, keep a lone "0"
-      .slice(0, maxDigits);
-    e.target.value = normalized;
-    apply(normalized === "" ? 0 : parseInt(normalized, 10));
-  };
-}
 
 export default function Settings() {
   const [branches, setBranches] = useState<Branch[]>([]);

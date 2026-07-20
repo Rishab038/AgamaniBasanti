@@ -26,7 +26,8 @@ export type SharedData = {
   monthDays: DayRecord[];
   todayPunches: PunchRecord[];
   advances: AdvanceRecord[];
-  advanceBalance: number;
+  /** total advance money actually handed to this worker (approved requests) */
+  advancePaid: number;
   lateSyncDates: Set<string>;
   shift: ShiftInfo;
   pending: number;
@@ -54,7 +55,7 @@ export default function MainScreen({
   const [monthDays, setMonthDays] = useState<DayRecord[]>([]);
   const [todayPunches, setTodayPunches] = useState<PunchRecord[]>([]);
   const [advances, setAdvances] = useState<AdvanceRecord[]>([]);
-  const [advanceBalance, setAdvanceBalance] = useState(0);
+  const [advancePaid, setAdvancePaid] = useState(0);
   const [lateSyncDates, setLateSyncDates] = useState<Set<string>>(new Set());
   const [shift, setShift] = useState<ShiftInfo>(null);
   const [pending, setPending] = useState(0);
@@ -83,7 +84,14 @@ export default function MainScreen({
           .eq("profile_id", profile.id)
           .order("created_at", { ascending: false })
           .limit(20),
-        supabase.from("advance_balances").select("balance").eq("profile_id", profile.id),
+        // total advance money handed over, not the outstanding balance:
+        // salary figures are deliberately not shown in the worker app, so a
+        // "still owed" number would have no context to make sense against
+        supabase
+          .from("advances")
+          .select("amount")
+          .eq("profile_id", profile.id)
+          .eq("status", "APPROVED"),
         supabase
           .from("attendance_app")
           .select("server_ts")
@@ -95,7 +103,7 @@ export default function MainScreen({
       if (days.data) setMonthDays(days.data as DayRecord[]);
       if (punches.data) setTodayPunches(punches.data as PunchRecord[]);
       if (adv.data) setAdvances(adv.data as AdvanceRecord[]);
-      if (bal.data) setAdvanceBalance(bal.data.reduce((s, r) => s + Number(r.balance), 0));
+      if (bal.data) setAdvancePaid(bal.data.reduce((s, r) => s + Number(r.amount), 0));
       if (lateSync.data) {
         setLateSyncDates(
           new Set(
@@ -127,7 +135,7 @@ export default function MainScreen({
   }, [profile.shift_id, shift]);
 
   const shared: SharedData = {
-    monthDays, todayPunches, advances, advanceBalance, lateSyncDates, shift, pending, reload,
+    monthDays, todayPunches, advances, advancePaid, lateSyncDates, shift, pending, reload,
   };
 
   return (

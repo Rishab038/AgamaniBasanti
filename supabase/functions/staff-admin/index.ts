@@ -11,11 +11,17 @@
 // Actions (POST JSON { action, ...params }):
 //   create_worker { full_name, phone, pin, branch_id,
 //                   employee_code?, shift_id?, base_salary?, joined_on?, role? }
-//   reset_pin     { profile_id, new_pin }
-//   change_phone  { profile_id, new_phone } -- staff changed their number
-//   set_active    { profile_id, active }
-//   clear_device  { profile_id }            -- allow login from a new phone
-//   delete_worker { profile_id }            -- only works if no attendance yet
+//   create_admin  { email, password, full_name, role: owner|supervisor }
+//                 -- managers sign in to the dashboard with a real email
+//                    address, unlike workers who use phone + PIN
+//   set_password   { profile_id, new_password }
+//                  -- 6 digits for workers, 8+ chars for managers
+//   change_phone   { profile_id, new_phone } -- staff changed their number
+//   set_active     { profile_id, active }
+//   clear_device   { profile_id }            -- allow login from a new phone
+//   delete_account { profile_id }
+//                  -- refuses: deleting yourself, deleting the last owner,
+//                     or anyone who already has attendance history
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -129,7 +135,7 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
 
   try {
-    await requireOwner(req);
+    const callerId = await requireOwner(req);
     const body = await req.json();
 
     switch (body.action) {
@@ -137,6 +143,56 @@ Deno.serve(async (req) => {
         const r = await createOneWorker(body);
         if (!r.ok) return json({ error: r.error }, 400);
         return json(r);
+      }
+
+      case "create_admin": {
+        const email = String(body.email ?? "").trim().toLowerCase();
+        const password = String(body.password ?? "");
+        const fullName = String(body.full_name ?? "").trim();
+        const role = body.role === "supervisor" ? "supervisor" : "owner";
+
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+          return json({ error: "Enter a valid email address" }, 400);
+        }
+        if (password.length < 8) {
+          return json({ error: "Password must be at least 8 characters" }, 400);
+        }
+        if (fullName.length < 2) {
+          return json({ error: "Enter their full name" }, 400);
+        }
+
+        const { data: branch } = await admin
+          .from("branches").select("id").limit(1).single();
+        if (!branch) return json({ error: "No shop configured yet" }, 400);
+
+        const { data: created, error: createErr } = await admin.auth.admin.createUser({
+          email,
+          password,
+          email_confirm: true, // no verification mail; the owner vouches for them
+        });
+        if (createErr) {
+          return json({
+            error: createErr.message.includes("already")
+              ? "An account with this email already exists"
+              : createErr.message,
+          }, 400);
+        }
+
+        const { error: profErr } = await admin.from("profiles").insert({
+          id: created.user.id,
+          employee_code: role === "owner" ? "OWNER" + Date.now().toString().slice(-3) : await nextEmployeeCode(),
+          full_name: fullName,
+          role,
+          branch_id: branch.id,
+          base_salary: 0,
+          active: true,
+          approved_at: new Date().toISOString(),
+        });
+        if (profErr) {
+          await admin.auth.admin.deleteUser(created.user.id);
+          return json({ error: profErr.message }, 400);
+        }
+        return json({ ok: true, email, role });
       }
 
       case "bulk_create_workers": {
@@ -176,12 +232,22 @@ Deno.serve(async (req) => {
         return json({ ok: true, phone });
       }
 
-      case "reset_pin": {
-        if (!/^\d{6}$/.test(String(body.new_pin ?? ""))) {
-          return json({ error: "PIN must be exactly 6 digits" }, 400);
+      case "set_password": {
+        const pw = String(body.new_password ?? "");
+        const { data: target } = await admin
+          .from("profiles").select("role").eq("id", body.profile_id).maybeSingle();
+        if (!target) return json({ error: "Account not found" }, 404);
+
+        // workers type a 6-digit PIN on a phone keypad; managers sign in
+        // to the dashboard with a real password
+        if (target.role === "worker") {
+          if (!/^\d{6}$/.test(pw)) return json({ error: "PIN must be exactly 6 digits" }, 400);
+        } else if (pw.length < 8) {
+          return json({ error: "Password must be at least 8 characters" }, 400);
         }
+
         const { error } = await admin.auth.admin.updateUserById(body.profile_id, {
-          password: String(body.new_pin),
+          password: pw,
         });
         if (error) return json({ error: error.message }, 400);
         return json({ ok: true });
@@ -219,13 +285,35 @@ Deno.serve(async (req) => {
         return json({ ok: true });
       }
 
-      case "delete_worker": {
-        // FK constraints stop this if the worker has attendance rows —
-        // that is intentional (use set_active for real ex-staff).
+      case "delete_account": {
+        // Guard 1: never delete the session you are signed in with.
+        if (body.profile_id === callerId) {
+          return json({
+            error: "You cannot delete your own login. Ask another owner to remove it.",
+          }, 400);
+        }
+
+        const { data: target } = await admin
+          .from("profiles").select("role, full_name").eq("id", body.profile_id).maybeSingle();
+        if (!target) return json({ error: "Account not found" }, 404);
+
+        // Guard 2: the shop must always keep at least one way in.
+        if (target.role === "owner") {
+          const { count } = await admin
+            .from("profiles").select("id", { count: "exact", head: true }).eq("role", "owner");
+          if ((count ?? 0) <= 1) {
+            return json({
+              error: "This is the only owner account — deleting it would lock everyone out. Create another owner first.",
+            }, 400);
+          }
+        }
+
+        // Guard 3: attendance history is payroll evidence. Foreign keys
+        // refuse the delete; deactivating keeps the record intact.
         const { error } = await admin.auth.admin.deleteUser(body.profile_id);
         if (error) {
           return json({
-            error: "Cannot delete: this worker already has attendance history. Deactivate instead.",
+            error: `${target.full_name} already has attendance history, which payroll records depend on. Deactivate them instead.`,
           }, 400);
         }
         return json({ ok: true });

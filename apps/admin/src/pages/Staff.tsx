@@ -2,8 +2,9 @@
 // staff-admin edge function), reset PIN, activate/deactivate,
 // re-allow a new phone, and set the fingerprint enrollment number.
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { intFieldHandler } from "../lib/intField";
 
 type StaffRow = {
   id: string;
@@ -88,6 +89,33 @@ export default function Staff() {
 
   const set = (k: keyof typeof emptyForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm({ ...form, [k]: e.target.value });
+
+  // ---- add a manager (dashboard login by email, not phone+PIN) ----
+  const [adminOpen, setAdminOpen] = useState(false);
+  const [adminForm, setAdminForm] = useState({
+    email: "", full_name: "", password: "", role: "owner",
+  });
+  const [adminBusy, setAdminBusy] = useState(false);
+
+  const addAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAdminBusy(true);
+    setError(null);
+    try {
+      await callStaffAdmin({ action: "create_admin", ...adminForm });
+      setNotice(
+        `${adminForm.full_name} can now sign in at this dashboard with ${adminForm.email}. ` +
+        `Share the password with them directly — it is not stored anywhere you can read it back.`,
+      );
+      setAdminForm({ email: "", full_name: "", password: "", role: "owner" });
+      setAdminOpen(false);
+      await load();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setAdminBusy(false);
+    }
+  };
 
   // ---- bulk add: paste "Name, phone, machineNo, shiftTime" lines ----
   const [bulkOpen, setBulkOpen] = useState(false);
@@ -187,15 +215,25 @@ export default function Staff() {
   const [pendingAction, setPendingAction] = useState<{ id: string; kind: string } | null>(null);
   const [newPin, setNewPin] = useState("");
   const [newPhone, setNewPhone] = useState("");
+  const [newPassword, setNewPassword] = useState("");
 
   const runAction = async (row: StaffRow, kind: string) => {
     setPendingAction(null);
     setError(null);
     try {
-      if (kind === "reset_pin") {
-        await callStaffAdmin({ action: "reset_pin", profile_id: row.id, new_pin: newPin });
+      if (kind === "set_pin") {
+        await callStaffAdmin({ action: "set_password", profile_id: row.id, new_password: newPin });
         setNotice(`PIN for ${row.full_name} is now ${newPin}. Tell them privately.`);
         setNewPin("");
+      } else if (kind === "set_password") {
+        await callStaffAdmin({
+          action: "set_password", profile_id: row.id, new_password: newPassword,
+        });
+        setNotice(
+          `Password changed for ${row.full_name}. Share it with them directly — ` +
+          `it cannot be read back later.`,
+        );
+        setNewPassword("");
       } else if (kind === "change_phone") {
         const res = await callStaffAdmin({
           action: "change_phone", profile_id: row.id, new_phone: newPhone,
@@ -208,7 +246,8 @@ export default function Staff() {
         await callStaffAdmin({ action: "clear_device", profile_id: row.id });
         setNotice(`${row.full_name} can now use a new phone.`);
       } else if (kind === "delete") {
-        await callStaffAdmin({ action: "delete_worker", profile_id: row.id });
+        await callStaffAdmin({ action: "delete_account", profile_id: row.id });
+        setNotice(`${row.full_name} has been removed.`);
       }
       await load();
     } catch (err) {
@@ -238,12 +277,59 @@ export default function Staff() {
   const rejectJoin = async (row: StaffRow) => {
     setError(null);
     try {
-      await callStaffAdmin({ action: "delete_worker", profile_id: row.id });
+      await callStaffAdmin({ action: "delete_account", profile_id: row.id });
       setNotice(`Request from ${row.full_name} removed.`);
       await load();
     } catch (err) {
       setError((err as Error).message);
     }
+  };
+
+  // ---- edit a staff member's details ----
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({
+    full_name: "", base_salary: 0, joined_on: "", employee_code: "",
+  });
+  const [editBusy, setEditBusy] = useState(false);
+
+  const startEdit = (row: StaffRow) => {
+    setPendingAction(null);
+    setEditingId(row.id);
+    setEditForm({
+      full_name: row.full_name,
+      base_salary: Number(row.base_salary) || 0,
+      joined_on: row.joined_on ?? "",
+      employee_code: row.employee_code,
+    });
+  };
+
+  const saveEdit = async (row: StaffRow) => {
+    if (!editForm.full_name.trim()) {
+      setError("Name cannot be empty");
+      return;
+    }
+    setEditBusy(true);
+    setError(null);
+    // owner-only by RLS; the audit trigger records every salary change
+    const { error: err } = await supabase.from("profiles").update({
+      full_name: editForm.full_name.trim(),
+      base_salary: editForm.base_salary,
+      joined_on: editForm.joined_on || null,
+      employee_code: editForm.employee_code.trim().toUpperCase(),
+      updated_at: new Date().toISOString(),
+    }).eq("id", row.id);
+    setEditBusy(false);
+    if (err) {
+      setError(
+        err.message.includes("duplicate") || err.message.includes("unique")
+          ? `Staff code ${editForm.employee_code.toUpperCase()} is already used by someone else.`
+          : err.message,
+      );
+      return;
+    }
+    setEditingId(null);
+    setNotice(`${editForm.full_name} updated.`);
+    await load();
   };
 
   const saveEnrollNo = async (row: StaffRow, value: string) => {
@@ -295,10 +381,60 @@ export default function Staff() {
         <button className="btn primary" onClick={() => { setShowForm(!showForm); setBulkOpen(false); }}>
           {showForm ? "Close" : "+ Add staff member"}
         </button>
-        <button className="btn" onClick={() => { setBulkOpen(!bulkOpen); setShowForm(false); }}>
+        <button className="btn" onClick={() => { setBulkOpen(!bulkOpen); setShowForm(false); setAdminOpen(false); }}>
           {bulkOpen ? "Close bulk add" : "⇪ Bulk add (paste list)"}
         </button>
+        <button className="btn" onClick={() => { setAdminOpen(!adminOpen); setShowForm(false); setBulkOpen(false); }}>
+          {adminOpen ? "Close" : "🔑 Add manager"}
+        </button>
       </div>
+
+      {adminOpen && (
+        <form className="card form-grid" onSubmit={addAdmin}>
+          <p className="muted" style={{ gridColumn: "1 / -1", margin: 0 }}>
+            Managers sign in to <strong>this dashboard</strong> with an email address
+            (workers use their mobile number in the app instead). Choose a password here
+            and pass it to them yourself — set it once, they keep using it.
+          </p>
+          <label>
+            Email address
+            <input
+              type="email" required placeholder="name@example.com"
+              value={adminForm.email}
+              onChange={(e) => setAdminForm({ ...adminForm, email: e.target.value })}
+            />
+          </label>
+          <label>
+            Full name
+            <input
+              required placeholder="Full name"
+              value={adminForm.full_name}
+              onChange={(e) => setAdminForm({ ...adminForm, full_name: e.target.value })}
+            />
+          </label>
+          <label>
+            Password (min 8 characters)
+            <input
+              type="text" required minLength={8} placeholder="choose a password"
+              value={adminForm.password}
+              onChange={(e) => setAdminForm({ ...adminForm, password: e.target.value })}
+            />
+          </label>
+          <label>
+            Access level
+            <select
+              value={adminForm.role}
+              onChange={(e) => setAdminForm({ ...adminForm, role: e.target.value })}
+            >
+              <option value="owner">Owner — full access including salary</option>
+              <option value="supervisor">Supervisor — attendance only, no salary</option>
+            </select>
+          </label>
+          <button className="btn primary" type="submit" disabled={adminBusy}>
+            {adminBusy ? "Creating…" : "Create manager login"}
+          </button>
+        </form>
+      )}
 
       {bulkOpen && (
         <div className="card">
@@ -440,14 +576,19 @@ export default function Staff() {
         </thead>
         <tbody>
           {staff.filter((s) => s.active || s.approved_at).map((row) => (
-            <tr key={row.id} className={row.active ? "" : "inactive"}>
+            <Fragment key={row.id}>
+            <tr className={row.active ? "" : "inactive"}>
               <td>{row.employee_code}</td>
               <td>
                 {row.full_name}{!row.active && " (inactive)"}
                 {row.phone && <div className="note muted">{row.phone}</div>}
               </td>
               <td>{row.role}</td>
-              <td>{row.role === "worker" ? `₹${row.base_salary}` : "—"}</td>
+              <td>
+                {row.role === "worker"
+                  ? `₹${Number(row.base_salary).toLocaleString("en-IN")}`
+                  : "—"}
+              </td>
               <td>
                 {row.role === "worker" ? (
                   <input
@@ -464,22 +605,35 @@ export default function Staff() {
               </td>
               <td>{row.device_id ? "✅ linked" : "—"}</td>
               <td className="actions">
-                {row.role !== "owner" && pendingAction?.id !== row.id && (
-                  <>
-                    <button className="btn small" onClick={() => setPendingAction({ id: row.id, kind: "reset_pin" })}>Reset PIN</button>
-                    <button className="btn small" onClick={() => setPendingAction({ id: row.id, kind: "change_phone" })}>Change no.</button>
-                    {row.device_id && (
-                      <button className="btn small" onClick={() => setPendingAction({ id: row.id, kind: "clear_device" })}>New phone</button>
-                    )}
-                    <button className="btn small" onClick={() => setPendingAction({ id: row.id, kind: "toggle_active" })}>
-                      {row.active ? "Deactivate" : "Activate"}
-                    </button>
-                    <button className="btn small danger" onClick={() => setPendingAction({ id: row.id, kind: "delete" })}>Delete</button>
-                  </>
+                {pendingAction?.id !== row.id && (
+                  row.role === "worker" ? (
+                    <>
+                      <button className="btn small" onClick={() => startEdit(row)}>Edit</button>
+                      <button className="btn small" onClick={() => setPendingAction({ id: row.id, kind: "set_pin" })}>Reset PIN</button>
+                      <button className="btn small" onClick={() => setPendingAction({ id: row.id, kind: "change_phone" })}>Change no.</button>
+                      {row.device_id && (
+                        <button className="btn small" onClick={() => setPendingAction({ id: row.id, kind: "clear_device" })}>New phone</button>
+                      )}
+                      <button className="btn small" onClick={() => setPendingAction({ id: row.id, kind: "toggle_active" })}>
+                        {row.active ? "Deactivate" : "Activate"}
+                      </button>
+                      <button className="btn small danger" onClick={() => setPendingAction({ id: row.id, kind: "delete" })}>Delete</button>
+                    </>
+                  ) : (
+                    <>
+                      <button className="btn small" onClick={() => startEdit(row)}>Edit</button>
+                      <button className="btn small" onClick={() => setPendingAction({ id: row.id, kind: "set_password" })}>
+                        Change password
+                      </button>
+                      <button className="btn small danger" onClick={() => setPendingAction({ id: row.id, kind: "delete" })}>
+                        Delete
+                      </button>
+                    </>
+                  )
                 )}
                 {pendingAction?.id === row.id && (
                   <>
-                    {pendingAction.kind === "reset_pin" ? (
+                    {pendingAction.kind === "set_pin" ? (
                       <>
                         <input
                           className="enroll-input"
@@ -491,9 +645,25 @@ export default function Staff() {
                         <button
                           className="btn small primary"
                           disabled={!/^\d{6}$/.test(newPin)}
-                          onClick={() => runAction(row, "reset_pin")}
+                          onClick={() => runAction(row, "set_pin")}
                         >
                           Set PIN
+                        </button>
+                      </>
+                    ) : pendingAction.kind === "set_password" ? (
+                      <>
+                        <input
+                          className="note-input"
+                          placeholder="new password (8+)"
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                        />
+                        <button
+                          className="btn small primary"
+                          disabled={newPassword.length < 8}
+                          onClick={() => runAction(row, "set_password")}
+                        >
+                          Set password
                         </button>
                       </>
                     ) : pendingAction.kind === "change_phone" ? (
@@ -518,11 +688,82 @@ export default function Staff() {
                         Confirm{pendingAction.kind === "delete" ? " delete" : ""}?
                       </button>
                     )}
-                    <button className="btn small" onClick={() => setPendingAction(null)}>Cancel</button>
+                    <button
+                      className="btn small"
+                      onClick={() => {
+                        setPendingAction(null);
+                        setNewPin(""); setNewPassword(""); setNewPhone("");
+                      }}
+                    >
+                      Cancel
+                    </button>
                   </>
                 )}
               </td>
             </tr>
+
+            {editingId === row.id && (
+              <tr>
+                <td colSpan={7} className="edit-cell">
+                  <div className="edit-panel">
+                    <label>
+                      Full name
+                      <input
+                        value={editForm.full_name}
+                        onChange={(e) => setEditForm({ ...editForm, full_name: e.target.value })}
+                      />
+                    </label>
+                    {row.role === "worker" && (
+                      <label>
+                        Monthly salary (₹)
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={editForm.base_salary}
+                          onChange={intFieldHandler(
+                            (n) => setEditForm((f) => ({ ...f, base_salary: n })), 7,
+                          )}
+                        />
+                      </label>
+                    )}
+                    <label>
+                      Staff code
+                      <input
+                        value={editForm.employee_code}
+                        onChange={(e) =>
+                          setEditForm({ ...editForm, employee_code: e.target.value.toUpperCase() })}
+                      />
+                    </label>
+                    <label>
+                      Joining date
+                      <input
+                        type="date"
+                        value={editForm.joined_on}
+                        onChange={(e) => setEditForm({ ...editForm, joined_on: e.target.value })}
+                      />
+                    </label>
+                    <div className="actions">
+                      <button
+                        className="btn primary"
+                        disabled={editBusy}
+                        onClick={() => saveEdit(row)}
+                      >
+                        {editBusy ? "Saving…" : "Save changes"}
+                      </button>
+                      <button className="btn" onClick={() => setEditingId(null)}>Cancel</button>
+                    </div>
+                    {row.role === "worker" && (
+                      <p className="muted" style={{ gridColumn: "1 / -1", margin: 0, fontSize: 13 }}>
+                        Salary changes apply to payroll from now on — payslips already
+                        confirmed keep the figure they were calculated with. To change their
+                        mobile number use "Change no." (it is also their app login).
+                      </p>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            )}
+            </Fragment>
           ))}
         </tbody>
       </table>

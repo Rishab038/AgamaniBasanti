@@ -29,22 +29,16 @@ numbers look swapped, they are.
 
 ### 2. Create the client's owner login
 
-The only account that exists is the developer's
-(`rishabagarwal038@gmail.com`). The client needs their own.
+Dashboard → **Staff → 🔑 Add manager** → their email, name, a password you choose,
+access level **Owner**. Pass the password to them directly; they use it to sign in
+at the same dashboard URL.
 
-Supabase dashboard → **Authentication → Users → Add user**
-- their email + a password they will change
-- ✅ **Auto Confirm User** (skip this and login fails with "Email not confirmed")
+Access levels:
+- **Owner** — everything, including salary and payroll
+- **Supervisor** — attendance and leave for their branch, **no salary visibility**
 
-Copy the new user's UID, then SQL Editor:
-
-```sql
-insert into profiles (id, employee_code, full_name, role, branch_id)
-values ('<new-uid>', 'OWNER2', '<client name>', 'owner',
-        (select id from branches limit 1));
-```
-
-Keep the developer account — it is the support route if the client is locked out.
+Keep the developer account too — it is the support route if the client is locked
+out.
 
 ### 3. Empty the test selfies
 

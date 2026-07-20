@@ -62,12 +62,13 @@ export default function HomeTab({
   const isOut = direction === "OUT";
   const enabled = fence.inside && !busy;
 
-  // month numbers for the stat tiles
+  // month numbers for the stat tiles. Salary is deliberately absent:
+  // showing a running estimate invites payday arguments when it does not
+  // match the owner's final figure.
   const worked = data.monthDays.filter((d) =>
     ["VERIFIED", "APP_ONLY", "DEVICE_ONLY"].includes(d.status),
   ).length;
-  const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
-  const salarySoFar = Math.round((profile.base_salary / daysInMonth) * worked);
+  const absent = data.monthDays.filter((d) => d.status === "ABSENT").length;
 
   useEffect(() => {
     let sub: Location.LocationSubscription | undefined;
@@ -257,18 +258,18 @@ export default function HomeTab({
       {/* stat tiles */}
       <View style={styles.tiles}>
         <View style={[styles.tile, shadow.card]}>
-          <Text style={styles.tileValue}>{worked}</Text>
+          <Text style={[styles.tileValue, { color: colors.good }]}>{worked}</Text>
           <Text style={styles.tileLabel}>Days present</Text>
         </View>
         <View style={[styles.tile, shadow.card]}>
-          <Text style={styles.tileValue}>₹{salarySoFar.toLocaleString("en-IN")}</Text>
-          <Text style={styles.tileLabel}>Salary so far</Text>
+          <Text style={[styles.tileValue, absent > 0 && { color: colors.rose }]}>{absent}</Text>
+          <Text style={styles.tileLabel}>Days absent</Text>
         </View>
         <View style={[styles.tile, shadow.card]}>
-          <Text style={[styles.tileValue, data.advanceBalance > 0 && { color: colors.accent }]}>
-            ₹{data.advanceBalance.toLocaleString("en-IN")}
+          <Text style={[styles.tileValue, data.advancePaid > 0 && { color: colors.accent }]}>
+            ₹{data.advancePaid.toLocaleString("en-IN")}
           </Text>
-          <Text style={styles.tileLabel}>Advance due</Text>
+          <Text style={styles.tileLabel}>Advance paid</Text>
         </View>
       </View>
 

@@ -1,8 +1,13 @@
-// Money tab — what every worker actually wants to know: how much
-// have I earned so far, how much advance do I owe, and how do I ask
-// for a new advance. Payslips appear here after payday.
+// Money tab — advances only.
+//
+// Salary figures are deliberately absent from the worker app. A running
+// estimate computed from attendance will rarely match the owner's final
+// payslip (leave policy, adjustments, rounding), and a worker who has
+// watched a number climb all month will treat any difference as a
+// shortfall. The owner remains the single source of truth on pay; the
+// app's job is to be honest about attendance and advances.
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -17,16 +22,6 @@ import { Profile, supabase } from "../../lib/supabase";
 import { colors, fonts, radius, shadow } from "../../lib/theme";
 import type { SharedData } from "../MainScreen";
 
-type Payslip = {
-  id: string;
-  gross: number;
-  deductions: number;
-  advance_cut: number;
-  net: number;
-  data: Record<string, number | string | boolean>;
-  payroll_runs: { month: string } | null;
-};
-
 const rupees = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`;
 
 export default function MoneyTab({ profile, data }: { profile: Profile; data: SharedData }) {
@@ -35,23 +30,11 @@ export default function MoneyTab({ profile, data }: { profile: Profile; data: Sh
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const [payslips, setPayslips] = useState<Payslip[]>([]);
 
   const worked = data.monthDays.filter((d) =>
     ["VERIFIED", "APP_ONLY", "DEVICE_ONLY"].includes(d.status),
   ).length;
-  const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
-  const salarySoFar = (profile.base_salary / daysInMonth) * worked;
-
-  const [openSlip, setOpenSlip] = useState<string | null>(null);
-
-  useEffect(() => {
-    supabase
-      .from("payslips")
-      .select("id, gross, deductions, advance_cut, net, data, payroll_runs(month)")
-      .eq("profile_id", profile.id)
-      .then(({ data: rows }) => setPayslips((rows as unknown as Payslip[]) ?? []));
-  }, [profile.id]);
+  const absent = data.monthDays.filter((d) => d.status === "ABSENT").length;
 
   const submitAsk = async () => {
     const amt = Number(amount);
@@ -97,25 +80,17 @@ export default function MoneyTab({ profile, data }: { profile: Profile; data: Sh
         </Pressable>
       )}
 
-      {/* salary estimate */}
-      <View style={[styles.card, shadow.card]}>
-        <Text style={styles.cardLabel}>SALARY SO FAR (ESTIMATE)</Text>
-        <Text style={styles.bigMoney}>{rupees(salarySoFar)}</Text>
-        <Text style={styles.cardHint}>
-          Based on {worked} day{worked === 1 ? "" : "s"} worked this month. The final
-          amount comes with your payslip on payday.
-        </Text>
-      </View>
-
       {/* advance */}
       <View style={[styles.card, shadow.card]}>
-        <Text style={styles.cardLabel}>ADVANCE TO REPAY</Text>
-        <Text style={[styles.bigMoney, data.advanceBalance > 0 && { color: colors.accent }]}>
-          {rupees(data.advanceBalance)}
+        <Text style={styles.cardLabel}>ADVANCE PAID</Text>
+        <Text style={[styles.bigMoney, data.advancePaid > 0 && { color: colors.accent }]}>
+          {rupees(data.advancePaid)}
         </Text>
-        {data.advanceBalance > 0 && (
-          <Text style={styles.cardHint}>Repaid bit by bit from each month's salary.</Text>
-        )}
+        <Text style={styles.cardHint}>
+          {data.advancePaid > 0
+            ? "Total advance the shop has given you so far."
+            : "You have not taken any advance yet."}
+        </Text>
 
         {!askOpen ? (
           <Pressable style={styles.askButton} onPress={() => setAskOpen(true)}>
@@ -186,64 +161,20 @@ export default function MoneyTab({ profile, data }: { profile: Profile; data: Sh
         </View>
       )}
 
-      {/* payslips */}
+      {/* attendance summary — the numbers that decide pay, without the pay */}
       <View style={[styles.card, shadow.card]}>
-        <Text style={styles.cardLabel}>PAYSLIPS</Text>
-        {payslips.length === 0 ? (
-          <Text style={styles.cardHint}>
-            Your payslips will appear here after the owner runs each month's salary.
-          </Text>
-        ) : (
-          payslips.map((p) => (
-            <View key={p.id}>
-              <Pressable
-                style={styles.requestRow}
-                onPress={() => setOpenSlip(openSlip === p.id ? null : p.id)}
-              >
-                <Text style={styles.requestAmount}>
-                  {p.payroll_runs
-                    ? new Date(p.payroll_runs.month).toLocaleDateString("en-IN", {
-                        month: "long", year: "numeric",
-                      })
-                    : "—"}
-                </Text>
-                <Text style={[styles.requestAmount, { color: colors.good }]}>{rupees(p.net)}</Text>
-              </Pressable>
-              {openSlip === p.id && (
-                <View style={styles.slipDetail}>
-                  <View style={styles.slipRow}>
-                    <Text style={styles.slipLabel}>
-                      Salary for {String(p.data.eligible_days ?? "")} days
-                    </Text>
-                    <Text style={styles.slipValue}>{rupees(p.gross)}</Text>
-                  </View>
-                  {Number(p.deductions) > 0 && (
-                    <View style={styles.slipRow}>
-                      <Text style={styles.slipLabel}>
-                        {String(p.data.unpaid_days_total ?? 0)} unpaid day(s)
-                      </Text>
-                      <Text style={[styles.slipValue, { color: colors.serious }]}>
-                        − {rupees(p.deductions)}
-                      </Text>
-                    </View>
-                  )}
-                  {Number(p.advance_cut) > 0 && (
-                    <View style={styles.slipRow}>
-                      <Text style={styles.slipLabel}>Advance repayment</Text>
-                      <Text style={[styles.slipValue, { color: colors.accent }]}>
-                        − {rupees(p.advance_cut)}
-                      </Text>
-                    </View>
-                  )}
-                  <View style={[styles.slipRow, styles.slipTotal]}>
-                    <Text style={[styles.slipLabel, { color: colors.ink }]}>You receive</Text>
-                    <Text style={[styles.slipValue, { color: colors.good }]}>{rupees(p.net)}</Text>
-                  </View>
-                </View>
-              )}
-            </View>
-          ))
-        )}
+        <Text style={styles.cardLabel}>THIS MONTH</Text>
+        <View style={styles.summaryRow}>
+          <Text style={styles.summaryLabel}>Days present</Text>
+          <Text style={[styles.summaryValue, { color: colors.good }]}>{worked}</Text>
+        </View>
+        <View style={styles.summaryRow}>
+          <Text style={styles.summaryLabel}>Days absent</Text>
+          <Text style={[styles.summaryValue, absent > 0 && { color: colors.rose }]}>{absent}</Text>
+        </View>
+        <Text style={styles.cardHint}>
+          For anything about your salary, please speak to the shop owner.
+        </Text>
       </View>
     </ScrollView>
   );
@@ -318,19 +249,15 @@ const styles = StyleSheet.create({
   pill: { borderRadius: radius.pill, paddingVertical: 4, paddingHorizontal: 12 },
   pillText: { fontFamily: fonts.extra, fontSize: 12 },
 
-  slipDetail: {
-    backgroundColor: colors.bg,
-    borderRadius: radius.sm,
-    padding: 14,
-    marginBottom: 8,
-  },
-  slipRow: {
+  summaryRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 4,
+    paddingVertical: 9,
+    borderTopWidth: 1,
+    borderTopColor: colors.line,
+    marginTop: 4,
   },
-  slipTotal: { borderTopWidth: 1, borderTopColor: colors.line2, marginTop: 6, paddingTop: 10 },
-  slipLabel: { fontFamily: fonts.bold, fontSize: 13.5, color: colors.ink2 },
-  slipValue: { fontFamily: fonts.extra, fontSize: 14.5, color: colors.ink },
+  summaryLabel: { fontFamily: fonts.bold, fontSize: 15, color: colors.ink2 },
+  summaryValue: { fontFamily: fonts.black, fontSize: 20, color: colors.ink },
 });
