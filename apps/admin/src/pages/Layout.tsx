@@ -10,19 +10,25 @@ import {
   ReceiptIndianRupee,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
+import { useBranch } from "../lib/branch";
 
 export default function Layout() {
   const location = useLocation();
   const [pendingCount, setPendingCount] = useState(0);
+  const { branches, branchId, setBranchId, branch } = useBranch();
 
-  // approvals badge — refreshed on every page change
+  // approvals badge — for the shop currently being viewed
   useEffect(() => {
+    if (!branchId) return;
     supabase
       .from("advances")
-      .select("id", { count: "exact", head: true })
+      .select("id, profiles!advances_profile_id_fkey!inner(branch_id)", {
+        count: "exact", head: true,
+      })
       .eq("status", "PENDING")
+      .eq("profiles.branch_id", branchId)
       .then(({ count }) => setPendingCount(count ?? 0));
-  }, [location.pathname]);
+  }, [location.pathname, branchId]);
 
   const links = [
     { to: "/", label: "Today", icon: LayoutDashboard },
@@ -37,12 +43,27 @@ export default function Layout() {
     <div className="shell">
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-mark">অ</div>
-          <div>
-            <div className="name">Agamani</div>
-            <div className="tag">Basanti · Cloth House</div>
-          </div>
+          <img src="/logo.png" alt="Agamani Basanti" className="brand-logo" />
         </div>
+
+        {/* shop switcher — the whole dashboard follows this choice */}
+        {branches.length > 1 && (
+          <div className="branch-switch">
+            {branches.map((b) => (
+              <button
+                key={b.id}
+                className={b.id === branchId ? "branch-btn active" : "branch-btn"}
+                onClick={() => setBranchId(b.id)}
+                title={`Show ${b.name}`}
+              >
+                {b.name}
+              </button>
+            ))}
+          </div>
+        )}
+        {branches.length === 1 && branch && (
+          <div className="branch-single">{branch.name}</div>
+        )}
         <nav>
           {links.map((l) => (
             <NavLink

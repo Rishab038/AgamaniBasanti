@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { useBranch } from "../lib/branch";
 
 type Advance = {
   id: string;
@@ -25,6 +26,7 @@ export default function Approvals() {
   const [balances, setBalances] = useState<Record<string, number>>({});
   const [pendingAction, setPendingAction] = useState<{ id: string; approve: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { branchId } = useBranch();
 
   const load = async () => {
     const [adv, bal] = await Promise.all([
@@ -33,8 +35,9 @@ export default function Approvals() {
         // advances has two FKs to profiles (requester + decider) —
         // PostgREST must be told this join means the requester
         .select(
-          "id, profile_id, amount, reason, status, created_at, decided_at, profiles!advances_profile_id_fkey(full_name, employee_code)",
+          "id, profile_id, amount, reason, status, created_at, decided_at, profiles!advances_profile_id_fkey!inner(full_name, employee_code, branch_id)",
         )
+        .eq("profiles.branch_id", branchId ?? "")
         .order("created_at", { ascending: false })
         .limit(50),
       supabase.from("advance_balances").select("profile_id, balance"),
@@ -48,7 +51,8 @@ export default function Approvals() {
 
   useEffect(() => {
     load();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [branchId]);
 
   const decide = async (a: Advance, approve: boolean) => {
     setPendingAction(null);

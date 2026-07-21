@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { useBranch } from "../lib/branch";
 import { intFieldHandler } from "../lib/intField";
 
 type Branch = {
@@ -12,6 +13,7 @@ type Branch = {
   lng: number | null;
   radius_m: number;
   wifi_ssid: string | null;
+  join_code: string | null;
 };
 
 type Shift = {
@@ -31,6 +33,7 @@ type Device = {
   serial: string;
   model: string | null;
   last_seen_at: string | null;
+  branch_id: string;
 };
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -43,17 +46,21 @@ export default function Settings() {
   const [error, setError] = useState<string | null>(null);
   const [newHoliday, setNewHoliday] = useState({ on_date: "", name: "" });
   const [devices, setDevices] = useState<Device[]>([]);
-  const [newDevice, setNewDevice] = useState({ serial: "", model: "" });
-  const [joinCode, setJoinCode] = useState<string | null>(null);
+  const [newDevice, setNewDevice] = useState({ serial: "", model: "", branch_id: "" });
+  const [newShop, setNewShop] = useState("");
+  // which shop an unregistered machine should be assigned to
+  const [attemptBranch, setAttemptBranch] = useState<Record<string, string>>({});
+  const { reloadBranches, branchId } = useBranch();
   const [attempts, setAttempts] = useState<{ serial: string; last_seen: string; hits: number }[]>([]);
 
   const load = async () => {
-    const [b, s, h, d, jc, at] = await Promise.all([
+    const [b, s, h, d, at] = await Promise.all([
       supabase.from("branches").select("*").order("created_at"),
       supabase.from("shifts").select("*").order("start_time"),
       supabase.from("holidays").select("*").gte("on_date", new Date().toISOString().slice(0, 10)).order("on_date"),
-      supabase.from("devices").select("id, serial, model, last_seen_at"),
-      supabase.from("app_settings").select("value").eq("key", "shop_join_code").maybeSingle(),
+      // all shops' machines are listed together: seeing both at once is
+      // how you spot one plugged into the wrong shop
+      supabase.from("devices").select("id, serial, model, last_seen_at, branch_id"),
       supabase.from("device_attempts").select("serial, last_seen, hits").order("last_seen", { ascending: false }),
     ]);
     setAttempts(at.data ?? []);
@@ -61,7 +68,6 @@ export default function Settings() {
     setShifts(s.data ?? []);
     setHolidays(h.data ?? []);
     setDevices(d.data ?? []);
-    setJoinCode(jc.data ? String(jc.data.value).replace(/"/g, "") : null);
   };
 
   useEffect(() => {
@@ -221,33 +227,74 @@ export default function Settings() {
         </div>
       ))}
 
-      <h2>Shop joining code</h2>
+      <h2>Joining codes</h2>
       <div className="card">
         <p className="muted" style={{ marginBottom: 10 }}>
-          New staff install the app, tap "New staff? Join", and enter this code with their
-          name and mobile number. They appear on the Staff page for your one-tap approval.
+          Each shop has its own code. New staff install the app, tap "New staff? Join",
+          and enter the code for the shop they work at — that is what puts them in the
+          right shop. They then appear on the Staff page for your one-tap approval.
         </p>
-        <div className="filter-row">
-          <span className="join-code">{joinCode ?? "······"}</span>
-          <button
-            className="btn"
-            onClick={async () => {
-              const fresh = String(Math.floor(100000 + Math.random() * 900000));
-              const { error: err } = await supabase
-                .from("app_settings").update({ value: fresh }).eq("key", "shop_join_code");
-              if (err) setError(err.message);
-              else {
-                setJoinCode(fresh);
-                flash("New joining code set — share it with staff who still need to join.");
-              }
-            }}
-          >
-            ↻ New code
-          </button>
-        </div>
+        {branches.map((b) => (
+          <div className="filter-row" key={b.id} style={{ marginTop: 12 }}>
+            <span className="join-code">{b.join_code ?? "······"}</span>
+            <div>
+              <strong>{b.name}</strong>
+              <div className="muted note">code for this shop</div>
+            </div>
+            <button
+              className="btn"
+              onClick={async () => {
+                const fresh = String(Math.floor(100000 + Math.random() * 900000));
+                const { error: err } = await supabase
+                  .from("branches").update({ join_code: fresh }).eq("id", b.id);
+                if (err) setError(err.message);
+                else {
+                  flash(`New code for ${b.name}. Share it with staff who still need to join.`);
+                  await load();
+                  await reloadBranches();
+                }
+              }}
+            >
+              ↻ New code
+            </button>
+          </div>
+        ))}
       </div>
 
-      <h2>Fingerprint machine</h2>
+      <h2>Add another shop</h2>
+      <form
+        className="card holiday-row"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          if (!newShop.trim()) return;
+          const { error: err } = await supabase.from("branches").insert({
+            name: newShop.trim(),
+            radius_m: 100,
+            join_code: String(Math.floor(100000 + Math.random() * 900000)),
+          });
+          if (err) setError(err.message);
+          else {
+            setNewShop("");
+            flash("Shop added. Switch to it in the sidebar, then set its location below.");
+            await load();
+            await reloadBranches();
+          }
+        }}
+      >
+        <input
+          placeholder="Shop name, e.g. Krishnanagar"
+          value={newShop}
+          onChange={(e) => setNewShop(e.target.value)}
+        />
+        <button className="btn primary" type="submit">Add shop</button>
+      </form>
+
+      <h2>Fingerprint machines</h2>
+      <p className="muted hint-line" style={{ marginTop: 0 }}>
+        Each shop has its own machine. Which shop a machine belongs to decides whose
+        attendance its punches count towards — enrollment numbers restart on every
+        machine, so #70 at one shop is a different person from #70 at the other.
+      </p>
 
       {attempts.filter((a) => !devices.some((d) => d.serial === a.serial)).map((a) => (
         <div className="banner warn" key={a.serial} style={{ cursor: "default" }}>
@@ -259,23 +306,31 @@ export default function Settings() {
             })}
             ) but is not registered yet.
           </span>
+          <select
+            value={attemptBranch[a.serial] ?? branchId ?? ""}
+            onChange={(e) => setAttemptBranch({ ...attemptBranch, [a.serial]: e.target.value })}
+          >
+            {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
           <button
             className="btn small primary"
             onClick={async () => {
-              if (branches.length === 0) return;
+              const target = attemptBranch[a.serial] ?? branchId;
+              if (!target) return;
               const { error: err } = await supabase.from("devices").insert({
-                branch_id: branches[0].id,
+                branch_id: target,
                 serial: a.serial,
                 model: "Realtime T304F Mini",
               });
               if (err) setError(err.message);
               else {
-                flash(`Machine ${a.serial} registered — its punches will now be accepted.`);
+                const bname = branches.find((b) => b.id === target)?.name ?? "";
+                flash(`Machine ${a.serial} registered to ${bname} — its punches will now be accepted.`);
                 await load();
               }
             }}
           >
-            Register this machine
+            Register here
           </button>
         </div>
       ))}
@@ -284,15 +339,21 @@ export default function Settings() {
         className="card holiday-row"
         onSubmit={async (e) => {
           e.preventDefault();
-          if (!newDevice.serial.trim() || branches.length === 0) return;
+          const target = newDevice.branch_id || branchId;
+          if (!newDevice.serial.trim() || !target) return;
           const { error: err } = await supabase.from("devices").insert({
-            branch_id: branches[0].id,
+            branch_id: target,
             serial: newDevice.serial.trim(),
             model: newDevice.model.trim() || null,
           });
-          if (err) setError(err.message);
-          else {
-            setNewDevice({ serial: "", model: "" });
+          if (err) {
+            setError(
+              err.message.includes("duplicate") || err.message.includes("unique")
+                ? "That serial number is already registered."
+                : err.message,
+            );
+          } else {
+            setNewDevice({ serial: "", model: "", branch_id: "" });
             flash("Machine registered — punches from this serial number will now be accepted.");
             await load();
           }
@@ -304,20 +365,30 @@ export default function Settings() {
           onChange={(e) => setNewDevice({ ...newDevice, serial: e.target.value })}
         />
         <input
-          placeholder="Model, e.g. Realtime T240F+"
+          placeholder="Model, e.g. Realtime T304F Mini"
           value={newDevice.model}
           onChange={(e) => setNewDevice({ ...newDevice, model: e.target.value })}
         />
+        <label>
+          At which shop?
+          <select
+            value={newDevice.branch_id || branchId || ""}
+            onChange={(e) => setNewDevice({ ...newDevice, branch_id: e.target.value })}
+          >
+            {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+        </label>
         <button className="btn primary" type="submit">Register machine</button>
       </form>
+
       <table>
         <thead>
-          <tr><th>Serial</th><th>Model</th><th>Last synced</th><th>Status</th></tr>
+          <tr><th>Serial</th><th>Model</th><th>Shop</th><th>Last synced</th><th>Status</th></tr>
         </thead>
         <tbody>
           {devices.length === 0 && (
             <tr>
-              <td colSpan={4} className="muted">
+              <td colSpan={5} className="muted">
                 No machine registered yet. Punches are only accepted from registered serial
                 numbers.
               </td>
@@ -331,6 +402,25 @@ export default function Settings() {
               <tr key={d.id}>
                 <td><strong>{d.serial}</strong></td>
                 <td>{d.model ?? "—"}</td>
+                <td>
+                  <select
+                    value={d.branch_id}
+                    onChange={async (e) => {
+                      const { error: err } = await supabase
+                        .from("devices")
+                        .update({ branch_id: e.target.value })
+                        .eq("id", d.id);
+                      if (err) setError(err.message);
+                      else {
+                        const bname = branches.find((b) => b.id === e.target.value)?.name ?? "";
+                        flash(`${d.serial} now belongs to ${bname}.`);
+                        await load();
+                      }
+                    }}
+                  >
+                    {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  </select>
+                </td>
                 <td className="muted">
                   {d.last_seen_at
                     ? new Date(d.last_seen_at).toLocaleString("en-IN", {

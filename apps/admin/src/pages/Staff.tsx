@@ -4,6 +4,7 @@
 
 import { Fragment, useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { useBranch } from "../lib/branch";
 import { intFieldHandler } from "../lib/intField";
 
 type StaffRow = {
@@ -34,8 +35,6 @@ const EMPLOYMENT_LABEL: Record<string, string> = {
 
 /** "10:30:00" -> "10:30"; null-safe */
 const hhmm = (t: string | null) => (t ? t.slice(0, 5) : "");
-
-type Option = { id: string; name: string };
 
 type BulkRow = {
   full_name: string;
@@ -80,7 +79,7 @@ const emptyForm = {
 
 export default function Staff() {
   const [staff, setStaff] = useState<StaffRow[]>([]);
-  const [branches, setBranches] = useState<Option[]>([]);
+  const { branchId } = useBranch();
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [busy, setBusy] = useState(false);
@@ -88,17 +87,18 @@ export default function Staff() {
   const [error, setError] = useState<string | null>(null);
 
   const load = async () => {
-    const [p, b] = await Promise.all([
-      supabase.from("profiles").select("*").order("employee_code"),
-      supabase.from("branches").select("id, name"),
-    ]);
-    setStaff((p.data as StaffRow[]) ?? []);
-    setBranches(b.data ?? []);
+    if (!branchId) return;
+    const { data } = await supabase
+      .from("profiles").select("*")
+      .eq("branch_id", branchId)
+      .order("employee_code");
+    setStaff((data as StaffRow[]) ?? []);
   };
 
   useEffect(() => {
     load();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [branchId]);
 
   const set = (k: keyof typeof emptyForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm({ ...form, [k]: e.target.value });
@@ -163,7 +163,7 @@ export default function Staff() {
     try {
       const data = await callStaffAdmin({
         action: "bulk_create_workers",
-        branch_id: branches[0]?.id,
+        branch_id: branchId,
         workers: bulkRows.map((r) => ({
           full_name: r.full_name,
           phone: r.phone,
@@ -206,7 +206,7 @@ export default function Staff() {
         pin: form.pin,
         phone: form.phone,
         base_salary: Number(form.base_salary) || 0,
-        branch_id: form.branch_id || branches[0]?.id,
+        branch_id: branchId,
         joined_on: form.joined_on,
       });
       setNotice(
@@ -303,6 +303,36 @@ export default function Staff() {
 
   // ---- edit a staff member's details ----
   const [openMenu, setOpenMenu] = useState<string | null>(null);
+  // The menu is position:fixed and anchored from the trigger's screen
+  // rect. Absolute positioning got clipped by the table's overflow
+  // (needed for its rounded corners) and by the mobile scroll
+  // container, so the last row's menu was cut off.
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number; up: boolean } | null>(null);
+
+  const openMenuAt = (id: string, e: React.MouseEvent<HTMLButtonElement>) => {
+    if (openMenu === id) {
+      setOpenMenu(null);
+      return;
+    }
+    const r = e.currentTarget.getBoundingClientRect();
+    const up = window.innerHeight - r.bottom < 280; // not enough room below
+    // right-aligned to the trigger, but never past the window edge
+    const MENU_W = 220;
+    const left = Math.min(r.right, window.innerWidth - 8);
+    setMenuPos({
+      top: up ? r.top - 6 : r.bottom + 6,
+      left: Math.max(left, MENU_W + 8),
+      up,
+    });
+    setOpenMenu(id);
+  };
+
+  const menuStyle = (): React.CSSProperties => ({
+    position: "fixed",
+    top: menuPos?.top ?? 0,
+    left: menuPos?.left ?? 0,
+    transform: `translateX(-100%)${menuPos?.up ? " translateY(-100%)" : ""}`,
+  });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({
     full_name: "", base_salary: 0, joined_on: "", employee_code: "",
@@ -421,13 +451,13 @@ export default function Staff() {
           {showForm ? "Close" : "+ Add staff member"}
         </button>
         <div className="menu-wrap">
-          <button className="btn" onClick={() => setOpenMenu(openMenu === "toolbar" ? null : "toolbar")}>
+          <button className="btn" onClick={(e) => openMenuAt("toolbar", e)}>
             More <span className="caret">▾</span>
           </button>
           {openMenu === "toolbar" && (
             <>
               <div className="menu-backdrop" onClick={() => setOpenMenu(null)} />
-              <div className="menu">
+              <div className="menu" style={menuStyle()}>
                 <button onClick={() => { setOpenMenu(null); setBulkOpen(true); setShowForm(false); setAdminOpen(false); }}>
                   Add many at once (paste a list)
                 </button>
@@ -604,12 +634,9 @@ export default function Staff() {
             Joining date
             <input type="date" value={form.joined_on} onChange={set("joined_on")} />
           </label>
-          <label>
-            Branch
-            <select value={form.branch_id} onChange={set("branch_id")}>
-              {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-            </select>
-          </label>
+          {/* no branch picker: staff are added to the shop currently
+              selected in the sidebar, which is what the owner is
+              already looking at */}
           <button className="btn primary" type="submit" disabled={busy}>
             {busy ? "Creating…" : "Create worker"}
           </button>
@@ -686,14 +713,14 @@ export default function Staff() {
                     <button
                       className="btn small menu-trigger"
                       aria-label={`Actions for ${row.full_name}`}
-                      onClick={() => setOpenMenu(openMenu === row.id ? null : row.id)}
+                      onClick={(e) => openMenuAt(row.id, e)}
                     >
                       Manage <span className="caret">▾</span>
                     </button>
                     {openMenu === row.id && (
                       <>
                         <div className="menu-backdrop" onClick={() => setOpenMenu(null)} />
-                        <div className="menu">
+                        <div className="menu" style={menuStyle()}>
                           <button onClick={() => { setOpenMenu(null); startEdit(row); }}>
                             Edit details
                           </button>

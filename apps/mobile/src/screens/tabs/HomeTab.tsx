@@ -34,6 +34,42 @@ const fmtShiftTime = (t: string) => {
 const fmtClock = (d: Date) =>
   d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true });
 
+const GRACE_MIN = 15;
+
+/** minutes from now to a "HH:MM[:SS]" time today, in local (IST) terms */
+function minutesFrom(now: Date, hhmmss: string | null): number | null {
+  if (!hhmmss) return null;
+  const [h, m] = hhmmss.split(":").map(Number);
+  const target = new Date(now);
+  target.setHours(h, m, 0, 0);
+  return Math.round((now.getTime() - target.getTime()) / 60000);
+}
+
+/**
+ * Punching outside the shift window is allowed but goes to the owner
+ * for a decision. Saying so before the tap is the difference between
+ * "the app is broken" and "I know why this needs approval".
+ */
+function windowNotice(
+  now: Date,
+  direction: "IN" | "OUT",
+  shiftStart: string | null,
+  shiftEnd: string | null,
+): string | null {
+  if (direction === "IN") {
+    const d = minutesFrom(now, shiftStart);
+    if (d === null) return null;
+    if (d > GRACE_MIN) return "You are late — the owner will be asked to approve this.";
+    if (d < -GRACE_MIN) return "It is early for your shift — the owner will be asked to approve.";
+    return null;
+  }
+  const d = minutesFrom(now, shiftEnd);
+  if (d === null) return null;
+  if (d < -GRACE_MIN) return "Leaving before your shift ends — the owner will decide how this day counts.";
+  if (d > GRACE_MIN) return "You are staying past your shift end — this will be sent for approval.";
+  return null;
+}
+
 export default function HomeTab({
   profile,
   branch,
@@ -50,6 +86,7 @@ export default function HomeTab({
   const [refreshing, setRefreshing] = useState(false);
   const [success, setSuccess] = useState<{ title: string; sub: string } | null>(null);
   const [blocked, setBlocked] = useState<string | null>(null);
+  const [confirmQuickOut, setConfirmQuickOut] = useState(false);
   const [camPerm, requestCamPerm] = useCameraPermissions();
   const [locGranted, setLocGranted] = useState<boolean | null>(null);
   const cameraRef = useRef<CameraView>(null);
@@ -116,6 +153,22 @@ export default function HomeTab({
 
   const startCheckin = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    // The button flips to CHECK OUT the moment you check in, so a
+    // second tap — very natural when you are not sure the first one
+    // registered — used to check people straight back out. One worker
+    // did exactly this today, 22 seconds after arriving.
+    if (direction === "OUT" && !confirmQuickOut) {
+      const lastIn = punches.filter((p) => p.direction === "IN").at(-1);
+      const minsSinceIn = lastIn
+        ? (Date.now() - new Date(lastIn.server_ts).getTime()) / 60000
+        : Infinity;
+      if (minsSinceIn < 30) {
+        setConfirmQuickOut(true);
+        return;
+      }
+    }
+    setConfirmQuickOut(false);
     if (!camPerm?.granted) {
       const p = await requestCamPerm();
       if (!p.granted) {
@@ -170,6 +223,9 @@ export default function HomeTab({
     }
   };
 
+  const shiftNotice = windowNotice(
+    new Date(), direction, profile.shift_start, profile.shift_end,
+  );
   const initials = profile.full_name.trim()[0]?.toUpperCase() ?? "?";
   // each worker now carries their own timings, set by the owner
   const shiftLine = profile.shift_start
@@ -251,6 +307,24 @@ export default function HomeTab({
           </Pressable>
         </Animated.View>
       </View>
+
+      {confirmQuickOut && (
+        <View style={styles.confirmBanner}>
+          <Text style={styles.confirmTitle}>You checked in just now</Text>
+          <Text style={styles.confirmBody}>
+            Tap CHECK OUT again only if you are really leaving the shop.
+          </Text>
+          <Pressable style={styles.confirmCancel} onPress={() => setConfirmQuickOut(false)}>
+            <Text style={styles.confirmCancelText}>No, I am staying</Text>
+          </Pressable>
+        </View>
+      )}
+
+      {shiftNotice && (
+        <View style={styles.windowBanner}>
+          <Text style={styles.windowText}>{shiftNotice}</Text>
+        </View>
+      )}
 
       <Text style={styles.selfieHint}>
         A selfie with time & location stamp will be saved automatically
@@ -411,6 +485,46 @@ const styles = StyleSheet.create({
   },
   bigButtonTextDisabled: { color: colors.ink3 },
 
+  confirmBanner: {
+    backgroundColor: colors.seriousBg,
+    borderWidth: 1,
+    borderColor: "#f0cfc6",
+    borderRadius: radius.md,
+    padding: 14,
+    marginBottom: 14,
+    alignItems: "center",
+  },
+  confirmTitle: { fontFamily: fonts.extra, color: colors.serious, fontSize: 15 },
+  confirmBody: {
+    fontFamily: fonts.semi,
+    color: colors.ink2,
+    fontSize: 13.5,
+    textAlign: "center",
+    marginTop: 4,
+    lineHeight: 19,
+  },
+  confirmCancel: {
+    marginTop: 10,
+    paddingVertical: 9,
+    paddingHorizontal: 20,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+  },
+  confirmCancelText: { fontFamily: fonts.extra, color: colors.ink, fontSize: 14 },
+  windowBanner: {
+    backgroundColor: colors.amberBg,
+    borderRadius: radius.md,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    marginBottom: 14,
+  },
+  windowText: {
+    fontFamily: fonts.bold,
+    color: colors.amber,
+    fontSize: 13.5,
+    textAlign: "center",
+    lineHeight: 19,
+  },
   selfieHint: {
     fontFamily: fonts.semi,
     fontSize: 13,

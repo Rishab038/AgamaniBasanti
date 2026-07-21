@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { useBranch } from "../lib/branch";
 
 type Run = { id: string; status: "DRAFT" | "CONFIRMED"; confirmed_at: string | null };
 
@@ -25,7 +26,7 @@ const rupees = (n: number) => `₹${Number(n).toLocaleString("en-IN")}`;
 
 export default function Salary() {
   const [month, setMonth] = useState(thisMonth());
-  const [branchId, setBranchId] = useState<string | null>(null);
+  const { branchId, branch } = useBranch();
   const [run, setRun] = useState<Run | null>(null);
   const [slips, setSlips] = useState<Payslip[]>([]);
   const [unresolved, setUnresolved] = useState(0);
@@ -37,12 +38,7 @@ export default function Salary() {
   const monthDate = `${month}-01`;
 
   const load = useCallback(async () => {
-    let bid = branchId;
-    if (!bid) {
-      const { data: b } = await supabase.from("branches").select("id").limit(1);
-      bid = b?.[0]?.id ?? null;
-      setBranchId(bid);
-    }
+    const bid = branchId;
     if (!bid) return;
 
     const { data: runs } = await supabase
@@ -68,10 +64,14 @@ export default function Salary() {
       new Date(`${monthDate}T00:00:00`).getMonth() + 1, 0);
     const { count } = await supabase
       .from("attendance_days")
-      .select("id", { count: "exact", head: true })
+      .select("id, profiles!attendance_days_profile_id_fkey!inner(branch_id)", {
+        count: "exact", head: true,
+      })
+      .eq("profiles.branch_id", bid)
       .gte("work_date", monthDate)
       .lte("work_date", monthEnd.toLocaleDateString("en-CA"))
-      .in("status", ["APP_ONLY", "DEVICE_ONLY"]);
+      .is("decision", null)
+      .not("review_reasons", "eq", "{}");
     setUnresolved(count ?? 0);
   }, [branchId, monthDate]);
 
@@ -143,7 +143,7 @@ export default function Salary() {
   return (
     <div>
       <div className="page-head">
-        <h1>Salary</h1>
+        <h1>Salary · {branch?.name ?? ""}</h1>
         <p>Generate a draft, check it, confirm — advances are recovered automatically.</p>
       </div>
 

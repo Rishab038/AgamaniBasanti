@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
+  Image,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -145,10 +146,11 @@ export default function LoginScreen() {
               ],
             }}
           >
-            <View style={[styles.mark, shadow.button]}>
-              <Text style={styles.markText}>অ</Text>
-            </View>
-            <Text style={styles.title}>Agamani Basanti</Text>
+            <Image
+              source={require("../../assets/logo-wide.png")}
+              style={styles.logo}
+              resizeMode="contain"
+            />
             <Text style={styles.sub}>Your attendance and salary, in your pocket</Text>
 
             {/* mode switch */}
@@ -288,23 +290,11 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   flex: { flex: 1 },
   scroll: { flexGrow: 1, justifyContent: "center", padding: 26, paddingVertical: 50 },
-  mark: {
-    width: 72,
-    height: 72,
-    borderRadius: 24,
-    backgroundColor: colors.accent,
-    alignItems: "center",
-    justifyContent: "center",
+  logo: {
+    width: "86%",
+    height: 110,
     alignSelf: "center",
-    marginBottom: 16,
-  },
-  markText: { fontSize: 34, color: "#fff", fontFamily: fonts.black },
-  title: {
-    color: colors.ink,
-    fontSize: 28,
-    fontFamily: fonts.black,
-    textAlign: "center",
-    letterSpacing: -0.5,
+    marginBottom: 6,
   },
   sub: {
     color: colors.ink3,

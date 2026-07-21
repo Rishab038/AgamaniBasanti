@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { useBranch } from "../lib/branch";
 
 type Row = {
   id: string;
@@ -12,6 +13,9 @@ type Row = {
   first_in: string | null;
   last_out: string | null;
   late_minutes: number;
+  worked_minutes: number | null;
+  review_reasons: string[] | null;
+  decision: string | null;
   approved_by: string | null;
   note: string | null;
   profiles: { full_name: string; employee_code: string } | null;
@@ -24,11 +28,39 @@ const STATUS_META: Record<string, { label: string; tone: string }> = {
   APP_ONLY: { label: "App only", tone: "warn" },
   DEVICE_ONLY: { label: "Fingerprint only", tone: "warn" },
   ABSENT: { label: "Absent", tone: "serious" },
+  HALF_DAY: { label: "Half day", tone: "warn" },
+  OVERTIME: { label: "Overtime", tone: "good" },
   LEAVE_PAID: { label: "Paid leave", tone: "info" },
   LEAVE_UNPAID: { label: "Unpaid leave", tone: "info" },
   HOLIDAY: { label: "Holiday", tone: "neutral" },
   OFF_DAY: { label: "Weekly off", tone: "neutral" },
 };
+
+/** why a day was flagged, in words the owner can act on */
+const REASON_LABEL: Record<string, string> = {
+  LATE_IN: "came late",
+  EARLY_IN: "came early",
+  EARLY_OUT: "left early",
+  LATE_OUT: "stayed late",
+  OFF_DAY_WORK: "worked on their leave day",
+};
+
+/** a day the owner has not ruled on that either lacks a second source
+ *  or broke the shift window */
+const needsDecision = (r: {
+  status: string; decision: string | null; review_reasons: string[] | null;
+}) =>
+  !r.decision &&
+  ((r.review_reasons ?? []).length > 0 ||
+    r.status === "APP_ONLY" ||
+    r.status === "DEVICE_ONLY");
+
+const DECISIONS: { key: string; label: string; tone: string; hint: string }[] = [
+  { key: "NORMAL", label: "Normal day", tone: "good", hint: "Full pay, as usual" },
+  { key: "HALF_DAY", label: "Half day", tone: "", hint: "Half a day's pay deducted" },
+  { key: "NO_PAY", label: "No pay", tone: "danger", hint: "Full day deducted" },
+  { key: "OVERTIME", label: "Overtime", tone: "good", hint: "Adds an extra day's pay" },
+];
 
 const monthStart = () => {
   const d = new Date();
@@ -46,29 +78,34 @@ export default function Attendance() {
   const [workerId, setWorkerId] = useState("");
   const [onlyProblems, setOnlyProblems] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { branchId } = useBranch();
 
   const load = useCallback(async () => {
     let q = supabase
       .from("attendance_days")
       .select(
-        "id, profile_id, work_date, status, first_in, last_out, late_minutes, approved_by, note, profiles!attendance_days_profile_id_fkey(full_name, employee_code)",
+        "id, profile_id, work_date, status, first_in, last_out, late_minutes, worked_minutes, review_reasons, decision, approved_by, note, profiles!attendance_days_profile_id_fkey!inner(full_name, employee_code, branch_id)",
       )
+      .eq("profiles.branch_id", branchId ?? "")
       .gte("work_date", from)
       .lte("work_date", to)
       .order("work_date", { ascending: false });
     if (workerId) q = q.eq("profile_id", workerId);
-    if (onlyProblems) q = q.in("status", ["APP_ONLY", "DEVICE_ONLY"]);
+    // "needs attention" = single-source days OR a flagged shift-window
+    // issue that the owner has not ruled on yet
+    if (onlyProblems) q = q.is("decision", null).not("review_reasons", "eq", "{}");
     const { data, error: err } = await q;
     if (err) setError(err.message);
     setRows((data as unknown as Row[]) ?? []);
-  }, [from, to, workerId, onlyProblems]);
+  }, [from, to, workerId, onlyProblems, branchId]);
 
   useEffect(() => {
+    if (!branchId) return;
     supabase
       .from("profiles").select("id, full_name, employee_code")
-      .eq("role", "worker").order("employee_code")
+      .eq("role", "worker").eq("branch_id", branchId).order("employee_code")
       .then(({ data }) => setWorkers(data ?? []));
-  }, []);
+  }, [branchId]);
 
   useEffect(() => {
     load();
@@ -76,15 +113,15 @@ export default function Attendance() {
 
   // two-step inline confirm (no native popups — they freeze embedded
   // browsers and confuse non-technical users)
-  const [pending, setPending] = useState<{ id: string; status: "VERIFIED" | "ABSENT" } | null>(null);
+  const [pending, setPending] = useState<string | null>(null); // row id being decided
   const [note, setNote] = useState("");
 
-  const decide = async (row: Row, status: "VERIFIED" | "ABSENT") => {
+  const decide = async (row: Row, decision: string) => {
     setPending(null);
-    const { error: err } = await supabase.rpc("fn_approve_day", {
+    const { error: err } = await supabase.rpc("fn_decide_day", {
       p_profile: row.profile_id,
       p_date: row.work_date,
-      p_status: status,
+      p_decision: decision,
       p_note: note || null,
     });
     setNote("");
@@ -178,35 +215,52 @@ export default function Attendance() {
                 <span className={`pill ${(STATUS_META[r.status] ?? { tone: "neutral" }).tone}`}>
                   {(STATUS_META[r.status] ?? { label: r.status }).label}
                 </span>
-                {r.approved_by && <span className="muted"> (owner decision)</span>}
+                {(r.review_reasons ?? []).length > 0 && (
+                  <div className="muted note">
+                    {(r.review_reasons ?? [])
+                      .map((x) => REASON_LABEL[x] ?? x)
+                      .join(", ")}
+                  </div>
+                )}
+                {r.decision && <div className="muted note">Owner: {r.decision.toLowerCase().replace("_", " ")}</div>}
                 {r.note && <div className="muted note">{r.note}</div>}
               </td>
               <td>{fmtTime(r.first_in) || "—"}</td>
               <td>{fmtTime(r.last_out) || "—"}</td>
               <td>{r.late_minutes > 0 ? `${r.late_minutes} min` : "—"}</td>
               <td className="actions">
-                {(r.status === "APP_ONLY" || r.status === "DEVICE_ONLY") && pending?.id !== r.id && (
-                  <>
-                    <button className="btn small" onClick={() => setPending({ id: r.id, status: "VERIFIED" })}>Approve</button>
-                    <button className="btn small danger" onClick={() => setPending({ id: r.id, status: "ABSENT" })}>Reject</button>
-                  </>
+                {pending !== r.id && needsDecision(r) && (
+                  <button className="btn small primary" onClick={() => setPending(r.id)}>
+                    Decide
+                  </button>
                 )}
-                {pending?.id === r.id && (
-                  <>
+                {pending !== r.id && !needsDecision(r) && r.decision && (
+                  <button className="btn small" onClick={() => setPending(r.id)}>Change</button>
+                )}
+                {pending === r.id && (
+                  <div className="decide-panel">
                     <input
                       className="note-input"
                       placeholder="reason (optional)"
                       value={note}
                       onChange={(e) => setNote(e.target.value)}
                     />
-                    <button
-                      className={`btn small ${pending.status === "ABSENT" ? "danger" : "primary"}`}
-                      onClick={() => decide(r, pending.status)}
-                    >
-                      Confirm {pending.status === "VERIFIED" ? "approve" : "reject"}
-                    </button>
-                    <button className="btn small" onClick={() => { setPending(null); setNote(""); }}>Cancel</button>
-                  </>
+                    <div className="actions">
+                      {DECISIONS.map((d) => (
+                        <button
+                          key={d.key}
+                          className={`btn small ${d.tone}`}
+                          title={d.hint}
+                          onClick={() => decide(r, d.key)}
+                        >
+                          {d.label}
+                        </button>
+                      ))}
+                      <button className="btn small" onClick={() => { setPending(null); setNote(""); }}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
                 )}
               </td>
             </tr>

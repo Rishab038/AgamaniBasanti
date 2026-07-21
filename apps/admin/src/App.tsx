@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./lib/supabase";
+import { BranchProvider } from "./lib/branch";
 import Login from "./pages/Login";
 import Layout from "./pages/Layout";
 import Dashboard from "./pages/Dashboard";
@@ -30,7 +31,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         {session ? (
-          <Route element={<Layout />}>
+          <Route element={<BranchProvider><Layout /></BranchProvider>}>
             <Route index element={<Dashboard />} />
             <Route path="staff" element={<Staff />} />
             <Route path="attendance" element={<Attendance />} />

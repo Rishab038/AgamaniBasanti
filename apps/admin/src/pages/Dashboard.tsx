@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 import { WifiOff } from "lucide-react";
 import { supabase } from "../lib/supabase";
+import { useBranch } from "../lib/branch";
 
 type DayRow = {
   id: string;
@@ -43,6 +44,8 @@ export default function Dashboard() {
   );
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(new Date());
+  const [staffCount, setStaffCount] = useState(0);
+  const { branchId, branch } = useBranch();
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 30000);
@@ -50,33 +53,54 @@ export default function Dashboard() {
   }, []);
 
   const load = async () => {
+    if (!branchId) return;
     const today = istToday();
     const dayStartUtc = new Date(`${today}T00:00:00+05:30`).toISOString();
-    const [att, app, dev, devs, adv, bal] = await Promise.all([
+
+    // device_punches references machines by serial text rather than a
+    // foreign key, so the branch filter cannot be an embedded join —
+    // resolve this shop's serials first.
+    const { data: devs } = await supabase
+      .from("devices").select("serial, last_seen_at").eq("branch_id", branchId);
+    const serials = (devs ?? []).map((d) => d.serial);
+
+    const [att, app, dev, adv, bal, staff] = await Promise.all([
       supabase
         .from("attendance_days")
+        // !inner makes the embedded profile a join, so the branch
+        // filter below actually restricts the rows returned
         .select(
-          "id, profile_id, status, late_minutes, profiles!attendance_days_profile_id_fkey(full_name, employee_code, device_enroll_no)",
+          "id, profile_id, status, late_minutes, profiles!attendance_days_profile_id_fkey!inner(full_name, employee_code, device_enroll_no, branch_id)",
         )
         .eq("work_date", today)
+        .eq("profiles.branch_id", branchId)
         .order("status"),
       supabase
         .from("attendance_app")
         .select("profile_id, server_ts")
         .gte("server_ts", dayStartUtc)
         .order("server_ts"),
-      supabase
-        .from("device_punches")
-        .select("enroll_no, punched_at")
-        .gte("punched_at", dayStartUtc)
-        .order("punched_at"),
-      supabase.from("devices").select("serial, last_seen_at"),
+      // Enrollment numbers restart per machine, so #70 exists at both
+      // shops. Punches must be limited to THIS branch's machines or one
+      // shop's fingerprint times would appear on the other's rows.
+      serials.length > 0
+        ? supabase
+            .from("device_punches")
+            .select("enroll_no, punched_at")
+            .gte("punched_at", dayStartUtc)
+            .in("device_serial", serials)
+            .order("punched_at")
+        : Promise.resolve({ data: [], error: null }),
       supabase
         .from("advances")
-        .select("id, profile_id, amount, reason, profiles!advances_profile_id_fkey(full_name)")
+        .select("id, profile_id, amount, reason, profiles!advances_profile_id_fkey!inner(full_name, branch_id)")
         .eq("status", "PENDING")
+        .eq("profiles.branch_id", branchId)
         .order("created_at"),
       supabase.from("advance_balances").select("profile_id, balance"),
+      supabase
+        .from("profiles").select("id", { count: "exact", head: true })
+        .eq("role", "worker").eq("active", true).eq("branch_id", branchId),
     ]);
     if (att.error) setError(att.error.message);
     if (adv.error) setError(adv.error.message);
@@ -89,7 +113,8 @@ export default function Dashboard() {
     for (const p of dev.data ?? []) if (!df[p.enroll_no]) df[p.enroll_no] = p.punched_at;
     setDevFirst(df);
 
-    setDevices(devs.data ?? []);
+    setDevices(devs ?? []);
+    setStaffCount(staff.count ?? 0);
     setAdvances((adv.data as unknown as PendingAdvance[]) ?? []);
     const b: Record<string, number> = {};
     for (const r of bal.data ?? []) {
@@ -98,6 +123,7 @@ export default function Dashboard() {
     setBalances(b);
   };
 
+  // reloads whenever the owner switches shop
   useEffect(() => {
     load();
     const ch = supabase
@@ -107,7 +133,8 @@ export default function Dashboard() {
     return () => {
       supabase.removeChannel(ch);
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [branchId]);
 
   const decideAdvance = async (a: PendingAdvance, approve: boolean) => {
     if (!approve) {
@@ -148,7 +175,10 @@ export default function Dashboard() {
   return (
     <div>
       <div className="page-head">
-        <h1>Today at the shop</h1>
+        <div>
+          <h1>Today at {branch?.name ?? "the shop"}</h1>
+          <p>{staffCount} active staff</p>
+        </div>
         <span className="when">
           {now.toLocaleDateString("en-IN", {
             weekday: "short", day: "numeric", month: "short", timeZone: "Asia/Kolkata",
@@ -159,6 +189,7 @@ export default function Dashboard() {
           })}
         </span>
       </div>
+
 
       {error && <div className="banner error" onClick={() => setError(null)}>{error}</div>}
       {staleDevices.length > 0 && (

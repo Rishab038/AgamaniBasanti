@@ -53,8 +53,15 @@ body {
   background: var(--bg);
 }
 
-h1 { font-size: 27px; font-weight: 800; letter-spacing: -0.02em; }
-h2 { font-size: 17px; font-weight: 800; margin: 32px 0 12px; }
+h1 { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; }
+h2 {
+  font-size: 14px;
+  font-weight: 800;
+  margin: 30px 0 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-3);
+}
 .muted { color: var(--ink-3); }
 .error { color: var(--serious); }
 
@@ -109,14 +116,14 @@ h2 { font-size: 17px; font-weight: 800; margin: 32px 0 12px; }
 
 /* ---------- inputs ---------- */
 input, select {
-  padding: 11px 13px;
-  font-size: 15px;
+  padding: 8px 11px;
+  font-size: 14px;
   font-family: inherit;
   font-weight: 600;
   color: var(--ink);
   background: var(--surface);
-  border: 1.5px solid var(--line-2);
-  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-2);
+  border-radius: 9px;
   transition: border-color 160ms var(--ease), box-shadow 160ms var(--ease);
 }
 input::placeholder { color: var(--ink-3); font-weight: 500; }
@@ -128,24 +135,27 @@ input:focus, select:focus {
 }
 
 /* ---------- buttons ---------- */
+/* Buttons are rectangular with a soft radius rather than full pills:
+   pills read as chips/tags and, at this density, made every row look
+   like a toolbar. Weight and shadow dialled back so the one primary
+   action per screen is the thing that stands out. */
 .btn {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 10px 18px;
-  font-size: 14px;
-  font-weight: 800;
+  gap: 6px;
+  padding: 8px 14px;
+  font-size: 13.5px;
+  font-weight: 700;
   font-family: inherit;
   color: var(--ink-2);
   background: var(--surface);
-  border: 1.5px solid var(--line-2);
-  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  border-radius: 9px;
   cursor: pointer;
-  box-shadow: var(--shadow-1);
   transition: background 160ms var(--ease), border-color 160ms var(--ease),
               box-shadow 160ms var(--ease), transform 100ms var(--ease);
 }
-.btn:hover { background: #fdfaf5; border-color: #d3bfa8; box-shadow: var(--shadow-2); }
+.btn:hover { background: #fdf6ef; border-color: #d3bfa8; }
 .btn:active { transform: scale(0.97); }
 .btn:disabled { opacity: 0.45; cursor: default; transform: none; box-shadow: none; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -154,9 +164,10 @@ input:focus, select:focus {
 .btn.soft { background: var(--rose-bg); border-color: var(--rose-bg); color: var(--rose); }
 .btn.danger { color: var(--serious); border-color: #ecc5ba; }
 .btn.danger:hover { background: var(--serious-bg); }
-.btn.small { padding: 6px 13px; font-size: 13px; }
+.btn.small { padding: 5px 11px; font-size: 12.5px; border-radius: 8px; }
 .btn.small.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-.btn.block { width: 100%; justify-content: center; padding: 13px; font-size: 15px; border-radius: 14px; }
+.btn.block { width: 100%; justify-content: center; padding: 12px; font-size: 15px; border-radius: 10px; }
+.btn.primary { box-shadow: 0 1px 2px rgba(198, 95, 63, 0.25); }
 
 /* ---------- shell ---------- */
 .shell { display: flex; min-height: 100vh; }
@@ -172,7 +183,18 @@ input:focus, select:focus {
   top: 0;
   height: 100vh;
 }
-.brand { display: flex; align-items: center; gap: 11px; padding: 2px 8px 26px; }
+.brand { display: flex; align-items: center; justify-content: center; padding: 4px 8px 18px; }
+/* the logo sits on white in the artwork, so it gets its own light
+   plate rather than floating on the dark cocoa sidebar */
+.brand-logo {
+  width: 100%;
+  max-width: 190px;
+  background: #fff;
+  border-radius: 10px;
+  padding: 8px 10px;
+  display: block;
+}
+.login-logo { width: 100%; max-width: 260px; margin: 0 auto 4px; display: block; }
 .brand .brand-mark { width: 38px; height: 38px; margin: 0; font-size: 17px; border-radius: 12px; box-shadow: none; }
 .brand .name { font-size: 18px; font-weight: 900; color: #fff; line-height: 1.2; }
 .brand .tag { font-size: 11.5px; color: #b8a493; font-weight: 600; }
@@ -235,27 +257,27 @@ input:focus, select:focus {
 .content {
   flex: 1;
   min-width: 0;              /* lets flex children shrink instead of overflowing */
-  padding: 36px 42px 60px;
+  padding: 26px 30px 48px;
 }
 
 @media (min-width: 1600px) {
-  .content { padding: 40px 64px 72px; }
+  .content { padding: 30px 48px 60px; }
 }
 .page { animation: rise-in 280ms var(--ease); }
-.page-head { margin-bottom: 22px; display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-.page-head p { color: var(--ink-3); margin-top: 3px; font-size: 14px; font-weight: 600; }
+.page-head { margin-bottom: 16px; display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.page-head p { color: var(--ink-3); margin-top: 2px; font-size: 13.5px; font-weight: 600; }
 .page-head .when { color: var(--ink-3); font-size: 14px; font-weight: 700; white-space: nowrap; }
 
 /* ---------- stat tiles (soft colored, per mockup) ---------- */
 .stats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 16px;
-  margin-bottom: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
 }
 .stat {
-  border-radius: var(--radius);
-  padding: 20px 22px;
+  border-radius: 12px;
+  padding: 15px 18px;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -279,10 +301,10 @@ input:focus, select:focus {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 13px 17px;
-  border-radius: var(--radius);
-  margin-bottom: 12px;
-  font-size: 14px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  margin-bottom: 10px;
+  font-size: 13.5px;
   font-weight: 600;
   border: 1px solid;
   cursor: pointer;
@@ -315,16 +337,15 @@ input:focus, select:focus {
 .card {
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-1);
-  padding: 24px;
-  margin: 14px 0;
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin: 10px 0;
   animation: rise-in 280ms var(--ease);
 }
 .form-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 14px;
   align-items: end;
 }
 .form-grid label, .filter-row label {
@@ -338,18 +359,23 @@ input:focus, select:focus {
 .filter-row, .holiday-row { display: flex; gap: 12px; align-items: end; flex-wrap: wrap; }
 
 /* ---------- tables ---------- */
+/* No overflow:hidden — it clipped the row action menus. Corners are
+   rounded on the corner cells instead, which survives an escaping
+   dropdown. */
 table {
   width: 100%;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border-radius: 12px;
   border-collapse: separate;
   border-spacing: 0;
-  overflow: hidden;
-  box-shadow: var(--shadow-1);
-  margin-top: 14px;
+  margin-top: 10px;
   animation: rise-in 300ms var(--ease);
 }
+thead tr:first-child th:first-child { border-top-left-radius: 12px; }
+thead tr:first-child th:last-child { border-top-right-radius: 12px; }
+tbody tr:last-child td:first-child { border-bottom-left-radius: 12px; }
+tbody tr:last-child td:last-child { border-bottom-right-radius: 12px; }
 th, td { padding: 11px 16px; text-align: left; vertical-align: middle; }
 th {
   font-size: 11.5px;
@@ -420,10 +446,9 @@ td { font-size: 14.5px; font-weight: 600; }
   inset: 0;
   z-index: 20;
 }
+/* position/coords are set inline from the trigger's screen rect so the
+   menu escapes the table's overflow clipping (see Staff.tsx) */
 .menu {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 6px);
   z-index: 21;
   min-width: 220px;
   background: var(--surface);
@@ -609,6 +634,43 @@ td { font-size: 14.5px; font-weight: 600; }
   .btn { padding: 9px 14px; font-size: 13.5px; }
 }
 
+/* ---------- shop switcher ---------- */
+.branch-switch {
+  display: flex;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.22);
+  border-radius: 999px;
+  padding: 4px;
+  margin-bottom: 14px;
+}
+.branch-btn {
+  flex: 1;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: #cbb9a8;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 160ms var(--ease), color 160ms var(--ease);
+}
+.branch-btn:hover { color: #f5ede4; }
+.branch-btn.active { background: var(--accent); color: #fff; }
+.branch-single {
+  color: #b8a493;
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 0 10px 14px;
+}
+
+.decide-panel { display: flex; flex-direction: column; gap: 8px; }
+.decide-panel .note-input { width: 100%; }
+
 .edit-cell { background: #fdfaf5; padding: 0 !important; }
 .edit-panel {
   display: grid;
@@ -629,13 +691,13 @@ td { font-size: 14.5px; font-weight: 600; }
 }
 .join-code {
   font-family: ui-monospace, Consolas, monospace;
-  font-size: 30px;
+  font-size: 20px;
   font-weight: 800;
-  letter-spacing: 8px;
+  letter-spacing: 4px;
   color: var(--accent);
   background: var(--accent-soft);
-  border-radius: var(--radius-sm);
-  padding: 8px 18px;
+  border-radius: 8px;
+  padding: 6px 12px;
 }
 code {
   background: #f3ece1;

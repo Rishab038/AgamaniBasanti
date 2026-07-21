@@ -47,12 +47,12 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json();
 
-    // shop code gate
-    const { data: setting } = await admin
-      .from("app_settings").select("value").eq("key", "shop_join_code").maybeSingle();
-    const expected = String(setting?.value ?? "").replace(/"/g, "");
+    // The joining code identifies WHICH shop the worker belongs to —
+    // with more than one branch it is the routing key, not just a gate.
     const given = String(body.join_code ?? "").replace(/\D/g, "");
-    if (!expected || given !== expected) {
+    const { data: joinBranch } = await admin
+      .from("branches").select("id, name").eq("join_code", given).maybeSingle();
+    if (!given || !joinBranch) {
       return json({ error: "Wrong shop code. Ask the owner for the correct one." }, 403);
     }
 
@@ -69,20 +69,25 @@ Deno.serve(async (req) => {
       return json({ error: "This mobile number is already registered. Try logging in instead." }, 400);
     }
 
+    // Machine numbers are unique PER SHOP, not globally — each branch
+    // has its own fingerprint machine with its own numbering, so shop
+    // A's #70 and shop B's #70 are different people. (This matches the
+    // unique(branch_id, device_enroll_no) index on profiles.)
     const enroll = parseInt(String(body.machine_no ?? ""), 10);
     if (Number.isInteger(enroll) && enroll > 0) {
       const { data: enrollTaken } = await admin
-        .from("profiles").select("full_name").eq("device_enroll_no", enroll).maybeSingle();
+        .from("profiles").select("full_name")
+        .eq("device_enroll_no", enroll)
+        .eq("branch_id", joinBranch.id)
+        .maybeSingle();
       if (enrollTaken) {
         return json({
-          error: `Machine number ${enroll} is already taken. Check your number and try again, or leave it empty.`,
+          error: `Machine number ${enroll} is already taken at ${joinBranch.name}. Check your number and try again, or leave it empty.`,
         }, 400);
       }
     }
 
-    const { data: branch } = await admin
-      .from("branches").select("id").limit(1).single();
-    if (!branch) return json({ error: "Shop is not set up yet" }, 500);
+    const branch = joinBranch;
 
     const { data: created, error: createErr } = await admin.auth.admin.createUser({
       email: `${phone}@staff.agamani.app`,

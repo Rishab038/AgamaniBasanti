@@ -19,9 +19,8 @@ export default function Login() {
   return (
     <div className="login-wrap">
       <form className="login-card" onSubmit={submit}>
-        <div className="brand-mark">অ</div>
-        <h1>Agamani Basanti</h1>
-        <p className="sub">Shop staff, attendance & salary — in one place</p>
+        <img src="/logo.png" alt="Agamani Basanti" className="login-logo" />
+        <p className="sub">Shop staff, attendance &amp; salary — in one place</p>
         <input
           type="email"
           placeholder="Email"
