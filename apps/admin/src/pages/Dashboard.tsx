@@ -11,6 +11,8 @@ type DayRow = {
   id: string;
   profile_id: string;
   status: string;
+  decision: string | null;
+  review_reasons: string[] | null;
   late_minutes: number;
   profiles: { full_name: string; employee_code: string; device_enroll_no: number | null } | null;
 };
@@ -70,7 +72,7 @@ export default function Dashboard() {
         // !inner makes the embedded profile a join, so the branch
         // filter below actually restricts the rows returned
         .select(
-          "id, profile_id, status, late_minutes, profiles!attendance_days_profile_id_fkey!inner(full_name, employee_code, device_enroll_no, branch_id)",
+          "id, profile_id, status, decision, review_reasons, late_minutes, profiles!attendance_days_profile_id_fkey!inner(full_name, employee_code, device_enroll_no, branch_id)",
         )
         .eq("work_date", today)
         .eq("profiles.branch_id", branchId)
@@ -156,17 +158,36 @@ export default function Dashboard() {
   const staleDevices = devices.filter(
     (d) => !d.last_seen_at || Date.now() - new Date(d.last_seen_at).getTime() > 2 * 3600 * 1000,
   );
-  const verified = rows.filter((r) => r.status === "VERIFIED").length;
+  // Anyone who punched today is present, however the day was verified.
+  // Counting only VERIFIED hid every day the owner had already approved:
+  // an approved day keeps status APP_ONLY (that IS what the evidence
+  // was) and records the ruling in `decision`.
+  const PRESENT = ["VERIFIED", "APP_ONLY", "DEVICE_ONLY", "HALF_DAY", "OVERTIME"];
+  const present = rows.filter((r) => PRESENT.includes(r.status)).length;
   const late = rows.filter((r) => r.late_minutes > 0).length;
   const absent = rows.filter((r) => r.status === "ABSENT").length;
+  // only days still waiting on the owner
+  const needsAttention = rows.filter(
+    (r) =>
+      !r.decision &&
+      ((r.review_reasons ?? []).length > 0 ||
+        r.status === "APP_ONLY" ||
+        r.status === "DEVICE_ONLY"),
+  ).length;
   const visibleAdvances = advances.filter((a) => !dismissed.includes(a.id));
 
   const statusPill = (r: DayRow) => {
+    // a decision the owner has made outranks the raw evidence
+    if (r.decision === "HALF_DAY") return <span className="pill warn">Half day</span>;
+    if (r.decision === "NO_PAY") return <span className="pill serious">No pay</span>;
+    if (r.decision === "OVERTIME") return <span className="pill good">Overtime</span>;
+    if (r.decision === "NORMAL") return <span className="pill good">Present</span>;
+
     if (r.status === "APP_ONLY" || r.status === "DEVICE_ONLY")
       return <span className="pill serious">Check this</span>;
     if (r.status === "ABSENT") return <span className="pill serious">Absent</span>;
     if (r.late_minutes > 0) return <span className="pill warn">Late</span>;
-    if (r.status === "VERIFIED") return <span className="pill good">Verified ✓</span>;
+    if (r.status === "VERIFIED") return <span className="pill good">Verified</span>;
     if (r.status === "LEAVE_PAID" || r.status === "LEAVE_UNPAID")
       return <span className="pill neutral">On leave</span>;
     return <span className="pill neutral">{r.status === "HOLIDAY" ? "Holiday" : "Weekly off"}</span>;
@@ -201,8 +222,12 @@ export default function Dashboard() {
 
       <div className="stats">
         <div className="stat good">
-          <div className="value">{verified}</div>
-          <div className="label">Checked in ✓ verified</div>
+          <div className="value">{present}</div>
+          <div className="label">Checked in today</div>
+        </div>
+        <div className="stat amber">
+          <div className="value">{needsAttention}</div>
+          <div className="label">Need your decision</div>
         </div>
         <div className="stat amber">
           <div className="value">{late}</div>

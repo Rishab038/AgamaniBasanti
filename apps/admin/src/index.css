@@ -1,66 +1,81 @@
 /* ============================================================
-   Agamani admin — "Warm & friendly" design system.
-   Cream ground, dark cocoa ink, terracotta accent, rounded Nunito.
-   Status: green = good, amber = late, rose = needs a look.
-   Status is never color-alone: every badge carries a label.
+   Agamani admin — design system.
+
+   Rewritten after the previous version read as unconsidered. Three
+   rules, applied without exception:
+
+   1 TYPE — Inter, and only three weights (400 / 500 / 600). The old
+     Nunito at ExtraBold/Black everywhere is what made it look
+     childlike: rounded letterforms at maximum weight, with no
+     contrast between a heading and a table cell.
+
+   2 COLOUR — the terracotta is an ACCENT, not a theme. It appears on
+     the primary button and the active nav item; nowhere else. Ground
+     and surfaces are neutral, text is grey. Colour then actually
+     means something when it does appear.
+
+   3 SPACE — every value is a multiple of 4. No arbitrary numbers.
    ============================================================ */
 
 * { box-sizing: border-box; margin: 0; }
 
 :root {
-  /* ground & surfaces */
+  /* Warm ground restored — the cream/terracotta palette was never the
+     problem; heavy rounded type at maximum weight was. Type discipline
+     from the rebuild stays. */
   --bg: #faf6f0;
   --surface: #ffffff;
   --line: #eee2d3;
   --line-2: #e3d5c3;
 
-  /* ink */
+  /* warm greys, still only three steps */
   --ink: #3a2f28;
   --ink-2: #6b5a4c;
   --ink-3: #9a8574;
 
-  /* accent */
+  /* the single accent */
   --accent: #d96f4e;
   --accent-deep: #c65f3f;
   --accent-soft: #fdeee7;
 
-  /* status */
   --good: #4d8a4f;      --good-bg: #e7f0e3;
   --amber: #a5622d;     --amber-bg: #fdeede;
   --rose: #8a5560;      --rose-bg: #f0e6e8;
   --serious: #b3402e;   --serious-bg: #f9e7e2;
 
-  /* sidebar */
-  --cocoa: #3a2f28;
-  --cocoa-2: #46392f;
+  --sidebar: #3a2f28;
 
-  --radius: 16px;
-  --radius-sm: 12px;
-  --shadow-1: 0 1px 3px rgba(58, 47, 40, 0.06);
-  --shadow-2: 0 6px 20px -4px rgba(58, 47, 40, 0.12);
-  --shadow-3: 0 16px 40px -12px rgba(58, 47, 40, 0.22);
+  --r-sm: 6px;
+  --r: 8px;
+  --r-lg: 12px;
+
+  --shadow-1: 0 1px 2px rgba(58, 47, 40, 0.05);
+  --shadow-2: 0 4px 12px -2px rgba(58, 47, 40, 0.10);
+  --shadow-3: 0 12px 32px -8px rgba(58, 47, 40, 0.18);
 
   --ease: cubic-bezier(0.2, 0, 0, 1);
 }
 
-html { -webkit-font-smoothing: antialiased; }
+html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
 
 body {
-  font-family: "Nunito", "Segoe UI", system-ui, sans-serif;
-  font-size: 15px;
-  line-height: 1.55;
+  font-family: "Inter", -apple-system, "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
   color: var(--ink);
   background: var(--bg);
+  font-feature-settings: "tnum" 1;   /* aligned digits in tables */
 }
 
-h1 { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; }
+/* type scale: 20 / 15 / 14 / 13 / 12 — nothing else */
+h1 { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
 h2 {
-  font-size: 14px;
-  font-weight: 800;
-  margin: 30px 0 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--ink-3);
+  font-size: 13px;
+  font-weight: 600;
+  margin: 32px 0 8px;
+  color: var(--ink-2);
+  letter-spacing: 0;
+  text-transform: none;
 }
 .muted { color: var(--ink-3); }
 .error { color: var(--serious); }
@@ -84,17 +99,14 @@ h2 {
   display: flex;
   align-items: center;
   justify-content: center;
-  background:
-    radial-gradient(700px 460px at 15% -5%, #fdeee7, transparent 60%),
-    radial-gradient(700px 500px at 110% 110%, #e7f0e3, transparent 55%),
-    var(--bg);
+  background: var(--bg);
 }
 .login-card {
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 22px;
-  box-shadow: var(--shadow-3);
-  padding: 44px 40px;
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-2);
+  padding: 32px 28px;
   width: 400px;
   display: flex;
   flex-direction: column;
@@ -110,70 +122,71 @@ h2 {
   background: linear-gradient(135deg, var(--accent), #b95538);
   color: #fff;
   display: flex; align-items: center; justify-content: center;
-  font-size: 25px; font-weight: 900;
+  font-size: 25px; font-weight: 500;
   box-shadow: var(--shadow-2);
 }
 
 /* ---------- inputs ---------- */
 input, select {
-  padding: 8px 11px;
-  font-size: 14px;
+  padding: 7px 10px;
+  font-size: 13.5px;
   font-family: inherit;
-  font-weight: 600;
+  font-weight: 400;
   color: var(--ink);
   background: var(--surface);
   border: 1px solid var(--line-2);
-  border-radius: 9px;
+  border-radius: var(--r);
   transition: border-color 160ms var(--ease), box-shadow 160ms var(--ease);
 }
-input::placeholder { color: var(--ink-3); font-weight: 500; }
-input:hover, select:hover { border-color: #d3bfa8; }
+input::placeholder { color: var(--ink-3); font-weight: 400; }
+input:hover, select:hover { border-color: var(--ink-3); }
 input:focus, select:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(217, 111, 78, 0.18);
+  box-shadow: 0 0 0 3px rgba(217, 111, 78, 0.16);
 }
 
 /* ---------- buttons ---------- */
-/* Buttons are rectangular with a soft radius rather than full pills:
-   pills read as chips/tags and, at this density, made every row look
-   like a toolbar. Weight and shadow dialled back so the one primary
-   action per screen is the thing that stands out. */
+/* Exactly two button styles: a filled primary (one per screen) and a
+   quiet default. Everything else that used to be a button — cancel,
+   secondary choices — is now a text link, which is what stopped the
+   pages looking like a wall of controls. */
 .btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 14px;
-  font-size: 13.5px;
-  font-weight: 700;
+  padding: 7px 12px;
+  font-size: 13px;
+  font-weight: 500;
   font-family: inherit;
-  color: var(--ink-2);
+  color: var(--ink);
   background: var(--surface);
   border: 1px solid var(--line-2);
-  border-radius: 9px;
+  border-radius: var(--r);
   cursor: pointer;
-  transition: background 160ms var(--ease), border-color 160ms var(--ease),
-              box-shadow 160ms var(--ease), transform 100ms var(--ease);
+  transition: background 140ms var(--ease), border-color 140ms var(--ease),
+              transform 80ms var(--ease);
 }
-.btn:hover { background: #fdf6ef; border-color: #d3bfa8; }
+.btn:hover { background: #fdfaf5; border-color: var(--ink-3); }
 .btn:active { transform: scale(0.97); }
 .btn:disabled { opacity: 0.45; cursor: default; transform: none; box-shadow: none; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn.primary:hover { background: var(--accent-deep); border-color: var(--accent-deep); }
-.btn.good { background: var(--good); border-color: var(--good); color: #fff; }
-.btn.soft { background: var(--rose-bg); border-color: var(--rose-bg); color: var(--rose); }
 .btn.danger { color: var(--serious); border-color: #ecc5ba; }
 .btn.danger:hover { background: var(--serious-bg); }
-.btn.small { padding: 5px 11px; font-size: 12.5px; border-radius: 8px; }
+.btn.small { padding: 5px 10px; font-size: 12.5px; }
 .btn.small.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-.btn.block { width: 100%; justify-content: center; padding: 12px; font-size: 15px; border-radius: 10px; }
-.btn.primary { box-shadow: 0 1px 2px rgba(198, 95, 63, 0.25); }
+.btn.block { width: 100%; justify-content: center; padding: 10px; font-size: 14px; }
+/* soft/good/danger variants are now quiet text, not filled colour */
+.btn.good { background: var(--surface); color: var(--good); border-color: var(--line-2); }
+.btn.good:hover { background: var(--good-bg); border-color: var(--good); }
+.btn.soft { background: var(--surface); color: var(--ink-2); border-color: var(--line-2); }
 
 /* ---------- shell ---------- */
 .shell { display: flex; min-height: 100vh; }
 .sidebar {
   width: 240px;
-  background: var(--cocoa);
+  background: var(--sidebar);
   color: #efe6dc;
   padding: 26px 16px;
   display: flex;
@@ -196,20 +209,20 @@ input:focus, select:focus {
 }
 .login-logo { width: 100%; max-width: 260px; margin: 0 auto 4px; display: block; }
 .brand .brand-mark { width: 38px; height: 38px; margin: 0; font-size: 17px; border-radius: 12px; box-shadow: none; }
-.brand .name { font-size: 18px; font-weight: 900; color: #fff; line-height: 1.2; }
-.brand .tag { font-size: 11.5px; color: #b8a493; font-weight: 600; }
+.brand .name { font-size: 18px; font-weight: 500; color: #fff; line-height: 1.2; }
+.brand .tag { font-size: 11.5px; color: var(--ink-3); font-weight: 400; }
 
 .sidebar nav { display: flex; flex-direction: column; gap: 5px; flex: 1; }
 .nav {
   display: flex;
   align-items: center;
   gap: 11px;
-  color: #cbb9a8;
+  color: #b8a493;
   text-decoration: none;
   padding: 11px 14px;
   border-radius: 13px;
   font-size: 14.5px;
-  font-weight: 700;
+  font-weight: 500;
   transition: background 160ms var(--ease), color 160ms var(--ease), transform 100ms var(--ease);
 }
 .nav svg { width: 17px; height: 17px; }
@@ -225,7 +238,7 @@ input:focus, select:focus {
   background: var(--accent);
   color: #fff;
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 500;
   border-radius: 999px;
   min-width: 20px;
   height: 20px;
@@ -239,13 +252,13 @@ input:focus, select:focus {
 .logout {
   display: flex; align-items: center; gap: 10px; justify-content: center;
   background: none;
-  border: 1.5px solid #55463a;
-  color: #cbb9a8;
+  border: 1px solid #55463a;
+  color: #b8a493;
   padding: 10px;
   border-radius: 13px;
   cursor: pointer;
   font-size: 13.5px;
-  font-weight: 700;
+  font-weight: 500;
   font-family: inherit;
   transition: background 160ms var(--ease), color 160ms var(--ease);
 }
@@ -265,8 +278,8 @@ input:focus, select:focus {
 }
 .page { animation: rise-in 280ms var(--ease); }
 .page-head { margin-bottom: 16px; display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-.page-head p { color: var(--ink-3); margin-top: 2px; font-size: 13.5px; font-weight: 600; }
-.page-head .when { color: var(--ink-3); font-size: 14px; font-weight: 700; white-space: nowrap; }
+.page-head p { color: var(--ink-3); margin-top: 2px; font-size: 13.5px; font-weight: 500; }
+.page-head .when { color: var(--ink-3); font-size: 14px; font-weight: 500; white-space: nowrap; }
 
 /* ---------- stat tiles (soft colored, per mockup) ---------- */
 .stats {
@@ -290,11 +303,11 @@ input:focus, select:focus {
 .stat.good { background: var(--good-bg); }
 .stat.amber { background: var(--amber-bg); }
 .stat.rose { background: var(--rose-bg); }
-.stat .value { font-size: 34px; font-weight: 900; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.stat .value { font-size: 34px; font-weight: 500; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; line-height: 1.1; }
 .stat.good .value { color: var(--good); }
 .stat.amber .value { color: var(--amber); }
 .stat.rose .value { color: var(--rose); }
-.stat .label { font-size: 14px; font-weight: 700; color: var(--ink-2); }
+.stat .label { font-size: 14px; font-weight: 500; color: var(--ink-2); }
 
 /* ---------- banners & approval card ---------- */
 .banner {
@@ -305,7 +318,7 @@ input:focus, select:focus {
   border-radius: 10px;
   margin-bottom: 10px;
   font-size: 13.5px;
-  font-weight: 600;
+  font-weight: 500;
   border: 1px solid;
   cursor: pointer;
   animation: slide-down 240ms var(--ease);
@@ -323,14 +336,14 @@ input:focus, select:focus {
   flex-wrap: wrap;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border-radius: var(--r-lg);
   box-shadow: var(--shadow-1);
   padding: 18px 22px;
   margin-top: 16px;
   animation: rise-in 300ms var(--ease);
 }
-.approval-card .who { font-size: 16px; font-weight: 800; }
-.approval-card .why { color: var(--ink-3); font-size: 13.5px; font-weight: 600; margin-top: 2px; }
+.approval-card .who { font-size: 16px; font-weight: 500; }
+.approval-card .why { color: var(--ink-3); font-size: 13.5px; font-weight: 500; margin-top: 2px; }
 .approval-card .acts { display: flex; gap: 10px; }
 
 /* ---------- cards & forms ---------- */
@@ -353,10 +366,32 @@ input:focus, select:focus {
   flex-direction: column;
   gap: 6px;
   font-size: 12.5px;
-  font-weight: 800;
+  font-weight: 500;
   color: var(--ink-2);
 }
-.filter-row, .holiday-row { display: flex; gap: 12px; align-items: end; flex-wrap: wrap; }
+/* align-items:end lined controls up by their bottom edge, so a bare
+   <select> sat lower than one wrapped in a <label> and the row looked
+   crooked. Centring them and giving inputs a shared height fixes it. */
+.filter-row, .holiday-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.filter-row label, .holiday-row label { align-self: stretch; justify-content: flex-end; }
+.filter-row input, .filter-row select,
+.holiday-row input, .holiday-row select,
+.filter-row .btn, .holiday-row .btn { height: 34px; }
+/* an inline question like "At which shop?" is a label, not a heading */
+.inline-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
 
 /* ---------- tables ---------- */
 /* No overflow:hidden — it clipped the row action menus. Corners are
@@ -379,7 +414,7 @@ tbody tr:last-child td:last-child { border-bottom-right-radius: 12px; }
 th, td { padding: 11px 16px; text-align: left; vertical-align: middle; }
 th {
   font-size: 11.5px;
-  font-weight: 800;
+  font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--ink-3);
@@ -388,47 +423,65 @@ th {
 tr + tr td { border-top: 1px solid var(--line); }
 tbody tr { transition: background 140ms var(--ease); }
 tbody tr:hover { background: #fdfaf5; }
-td { font-size: 14.5px; font-weight: 600; }
+td { font-size: 13.5px; font-weight: 400; color: var(--ink); }
 
 /* ---------- status pills ---------- */
+/* Status reads as a coloured dot plus plain text, not a filled badge.
+   A table of 30 rows of pastel lozenges looked like stickers and made
+   the status column shout louder than the staff names. The dot keeps
+   status scannable without a background, and the label still carries
+   the meaning so nothing depends on colour alone. */
 .pill {
   display: inline-flex;
   align-items: center;
-  padding: 4px 13px;
-  border-radius: 999px;
-  font-size: 12.5px;
-  font-weight: 800;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 500;
   white-space: nowrap;
+  color: var(--ink);
+  background: none;
+  padding: 0;
 }
-.pill.good { color: var(--good); background: var(--good-bg); }
-.pill.warn { color: var(--amber); background: var(--amber-bg); }
-.pill.serious { color: var(--rose); background: var(--rose-bg); }
-.pill.neutral { color: var(--ink-2); background: #f3ece1; }
-.pill.info { color: var(--good); background: var(--good-bg); }
+.pill::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  background: currentColor;
+}
+.pill.good    { color: var(--good); }
+.pill.warn    { color: var(--amber); }
+.pill.serious { color: var(--rose); }
+.pill.neutral { color: var(--ink-3); }
+.pill.info    { color: var(--good); }
+/* the label itself stays in ink so only the dot is coloured */
+.pill { --dot: currentColor; }
+.pill > span { color: var(--ink); }
 
 /* ---------- misc ---------- */
 .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .inactive td { color: var(--ink-3); }
 .enroll-input { width: 92px; padding: 7px 9px; font-size: 13px; }
 .note-input { width: 160px; padding: 7px 9px; font-size: 13px; }
-.hint-line { margin-top: 14px; font-size: 13px; font-weight: 600; }
+.hint-line { margin-top: 14px; font-size: 13px; font-weight: 500; }
 .note { font-size: 12.5px; margin-top: 2px; }
 .weekoff { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; grid-column: 1 / -1; }
 .weekday {
   display: flex; flex-direction: row !important;
   align-items: center; gap: 5px;
-  font-size: 13px; font-weight: 700;
+  font-size: 13px; font-weight: 500;
   color: var(--ink-2);
 }
 .weekday input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px; }
-.empty-cell { text-align: center; padding: 36px !important; color: var(--ink-3); font-weight: 600; }
+.empty-cell { text-align: center; padding: 36px !important; color: var(--ink-3); font-weight: 500; }
 .bulk-input {
   width: 100%;
   font-family: ui-monospace, Consolas, monospace;
   font-size: 13px;
   color: var(--ink);
   border: 1.5px solid var(--line-2);
-  border-radius: var(--radius-sm);
+  border-radius: var(--r);
   padding: 12px;
   margin-bottom: 12px;
   resize: vertical;
@@ -466,7 +519,7 @@ td { font-size: 14.5px; font-weight: 600; }
   border: none;
   font-family: inherit;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--ink);
   padding: 10px 12px;
   border-radius: 9px;
@@ -474,14 +527,14 @@ td { font-size: 14.5px; font-weight: 600; }
   white-space: nowrap;
   transition: background 120ms var(--ease);
 }
-.menu button:hover { background: #fdf3ec; color: var(--accent-deep); }
+.menu button:hover { background: var(--accent-soft); color: var(--accent-deep); }
 .menu button.danger { color: var(--serious); }
 .menu button.danger:hover { background: var(--serious-bg); }
 .menu-sep { height: 1px; background: var(--line); margin: 5px 8px; }
 
 /* ---------- toolbar ---------- */
 .toolbar { align-items: center; margin-bottom: 4px; }
-.toolbar-count { margin-left: auto; color: var(--ink-3); font-size: 13.5px; font-weight: 700; }
+.toolbar-count { margin-left: auto; color: var(--ink-3); font-size: 13.5px; font-weight: 500; }
 
 /* ---------- quieter table chrome ---------- */
 .dash { color: var(--ink-3); }
@@ -491,7 +544,7 @@ td { font-size: 14.5px; font-weight: 600; }
   padding: 0;
   font-family: inherit;
   font-size: 13.5px;
-  font-weight: 700;
+  font-weight: 500;
   color: var(--accent);
   cursor: pointer;
   border-bottom: 1px dashed currentColor;
@@ -649,10 +702,10 @@ td { font-size: 14.5px; font-weight: 600; }
   border: none;
   border-radius: 999px;
   background: none;
-  color: #cbb9a8;
+  color: #b8a493;
   font-family: inherit;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
@@ -664,14 +717,63 @@ td { font-size: 14.5px; font-weight: 600; }
 .branch-single {
   color: #b8a493;
   font-size: 12.5px;
-  font-weight: 700;
+  font-weight: 500;
   padding: 0 10px 14px;
 }
 
-.decide-panel { display: flex; flex-direction: column; gap: 8px; }
-.decide-panel .note-input { width: 100%; }
+/* ---------- attendance decision ----------
+   One choice among four. Options are a list with their pay effect
+   spelled out, so nothing relies on colour alone and Cancel is
+   visibly not one of the choices. */
+.decide-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 260px;
+  padding: 4px 0;
+}
+.decide-head { font-size: 14px; }
+.decide-options {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.decide-option {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 13px;
+  background: var(--surface);
+  border: none;
+  border-top: 1px solid var(--line);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms var(--ease);
+}
+.decide-option:first-child { border-top: none; }
+.decide-option:hover { background: var(--accent-soft); }
+.decide-label { font-size: 14px; font-weight: 500; color: var(--ink); }
+.decide-effect { font-size: 12.5px; font-weight: 500; color: var(--ink-3); white-space: nowrap; }
+.decide-note { width: 100%; font-size: 13px; }
+.decide-cancel {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 2px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-3);
+  cursor: pointer;
+  text-decoration: underline;
+}
+.decide-cancel:hover { color: var(--ink); }
 
-.edit-cell { background: #fdfaf5; padding: 0 !important; }
+.edit-cell { background: #fafafa; padding: 0 !important; }
 .edit-panel {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -686,13 +788,13 @@ td { font-size: 14.5px; font-weight: 600; }
   flex-direction: column;
   gap: 6px;
   font-size: 12.5px;
-  font-weight: 800;
+  font-weight: 500;
   color: var(--ink-2);
 }
 .join-code {
   font-family: ui-monospace, Consolas, monospace;
   font-size: 20px;
-  font-weight: 800;
+  font-weight: 500;
   letter-spacing: 4px;
   color: var(--accent);
   background: var(--accent-soft);
@@ -705,4 +807,4 @@ code {
   border-radius: 6px;
   font-size: 12.5px;
 }
-.missing { color: var(--serious); font-weight: 700; }
+.missing { color: var(--serious); font-weight: 500; }

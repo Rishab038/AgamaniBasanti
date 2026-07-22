@@ -3,11 +3,10 @@ import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import {
   useFonts,
-  Nunito_600SemiBold,
-  Nunito_700Bold,
-  Nunito_800ExtraBold,
-  Nunito_900Black,
-} from "@expo-google-fonts/nunito";
+  Inter_400Regular,
+  Inter_500Medium,
+  Inter_600SemiBold,
+} from "@expo-google-fonts/inter";
 import type { Session } from "@supabase/supabase-js";
 import { Branch, Profile, supabase } from "./src/lib/supabase";
 import LoginScreen from "./src/screens/LoginScreen";
@@ -17,10 +16,9 @@ import ConsentScreen from "./src/screens/ConsentScreen";
 
 export default function App() {
   const [fontsLoaded] = useFonts({
-    Nunito_600SemiBold,
-    Nunito_700Bold,
-    Nunito_800ExtraBold,
-    Nunito_900Black,
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
   });
   const [session, setSession] = useState<Session | null>(null);
   const [ready, setReady] = useState(false);
@@ -100,5 +98,5 @@ const styles = StyleSheet.create({
     padding: 24,
     backgroundColor: "#faf6f0",
   },
-  warn: { marginTop: 16, fontSize: 16, color: "#6b5a4c", textAlign: "center" },
+  warn: { marginTop: 16, fontSize: 15, color: "#6b5a4c", textAlign: "center" },
 });

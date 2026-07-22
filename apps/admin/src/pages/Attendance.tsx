@@ -55,11 +55,14 @@ const needsDecision = (r: {
     r.status === "APP_ONLY" ||
     r.status === "DEVICE_ONLY");
 
-const DECISIONS: { key: string; label: string; tone: string; hint: string }[] = [
-  { key: "NORMAL", label: "Normal day", tone: "good", hint: "Full pay, as usual" },
-  { key: "HALF_DAY", label: "Half day", tone: "", hint: "Half a day's pay deducted" },
-  { key: "NO_PAY", label: "No pay", tone: "danger", hint: "Full day deducted" },
-  { key: "OVERTIME", label: "Overtime", tone: "good", hint: "Adds an extra day's pay" },
+/* A decision is one choice among four, not four separate actions — so
+   it reads as a list with each option's pay effect stated, rather than
+   a row of buttons competing for the eye. */
+const DECISIONS: { key: string; label: string; effect: string }[] = [
+  { key: "NORMAL", label: "Normal day", effect: "Full pay" },
+  { key: "HALF_DAY", label: "Half day", effect: "Half a day deducted" },
+  { key: "NO_PAY", label: "No pay", effect: "Full day deducted" },
+  { key: "OVERTIME", label: "Overtime", effect: "Adds an extra day's pay" },
 ];
 
 const monthStart = () => {
@@ -212,9 +215,18 @@ export default function Attendance() {
               <td>{r.work_date}</td>
               <td>{r.profiles?.employee_code} — {r.profiles?.full_name}</td>
               <td>
-                <span className={`pill ${(STATUS_META[r.status] ?? { tone: "neutral" }).tone}`}>
-                  {(STATUS_META[r.status] ?? { label: r.status }).label}
-                </span>
+                {/* the owner's ruling outranks the raw evidence — a day
+                    they marked Normal should not keep saying "App only" */}
+                {(() => {
+                  const d = r.decision;
+                  const meta =
+                    d === "NORMAL" ? { label: "Present", tone: "good" } :
+                    d === "HALF_DAY" ? { label: "Half day", tone: "warn" } :
+                    d === "NO_PAY" ? { label: "No pay", tone: "serious" } :
+                    d === "OVERTIME" ? { label: "Overtime", tone: "good" } :
+                    STATUS_META[r.status] ?? { label: r.status, tone: "neutral" };
+                  return <span className={`pill ${meta.tone}`}>{meta.label}</span>;
+                })()}
                 {(r.review_reasons ?? []).length > 0 && (
                   <div className="muted note">
                     {(r.review_reasons ?? [])
@@ -222,7 +234,7 @@ export default function Attendance() {
                       .join(", ")}
                   </div>
                 )}
-                {r.decision && <div className="muted note">Owner: {r.decision.toLowerCase().replace("_", " ")}</div>}
+                {r.decision && <div className="muted note">Decided by owner</div>}
                 {r.note && <div className="muted note">{r.note}</div>}
               </td>
               <td>{fmtTime(r.first_in) || "—"}</td>
@@ -238,28 +250,36 @@ export default function Attendance() {
                   <button className="btn small" onClick={() => setPending(r.id)}>Change</button>
                 )}
                 {pending === r.id && (
-                  <div className="decide-panel">
+                  <div className="decide-sheet">
+                    <div className="decide-head">
+                      <strong>{r.profiles?.full_name}</strong>
+                      <span className="muted"> · {r.work_date}</span>
+                      {(r.review_reasons ?? []).length > 0 && (
+                        <div className="muted note">
+                          {(r.review_reasons ?? []).map((x) => REASON_LABEL[x] ?? x).join(", ")}
+                        </div>
+                      )}
+                    </div>
+                    <div className="decide-options">
+                      {DECISIONS.map((d) => (
+                        <button key={d.key} className="decide-option" onClick={() => decide(r, d.key)}>
+                          <span className="decide-label">{d.label}</span>
+                          <span className="decide-effect">{d.effect}</span>
+                        </button>
+                      ))}
+                    </div>
                     <input
-                      className="note-input"
-                      placeholder="reason (optional)"
+                      className="decide-note"
+                      placeholder="Add a reason (optional)"
                       value={note}
                       onChange={(e) => setNote(e.target.value)}
                     />
-                    <div className="actions">
-                      {DECISIONS.map((d) => (
-                        <button
-                          key={d.key}
-                          className={`btn small ${d.tone}`}
-                          title={d.hint}
-                          onClick={() => decide(r, d.key)}
-                        >
-                          {d.label}
-                        </button>
-                      ))}
-                      <button className="btn small" onClick={() => { setPending(null); setNote(""); }}>
-                        Cancel
-                      </button>
-                    </div>
+                    <button
+                      className="decide-cancel"
+                      onClick={() => { setPending(null); setNote(""); }}
+                    >
+                      Cancel
+                    </button>
                   </div>
                 )}
               </td>

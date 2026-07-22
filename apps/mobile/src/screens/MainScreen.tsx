@@ -12,7 +12,12 @@ import AttendanceTab from "./tabs/AttendanceTab";
 import MoneyTab from "./tabs/MoneyTab";
 
 export type DayRecord = { work_date: string; status: string; late_minutes: number };
-export type PunchRecord = { direction: "IN" | "OUT"; server_ts: string };
+export type PunchKind = "ARRIVAL" | "LUNCH_OUT" | "LUNCH_IN" | "DEPARTURE";
+export type PunchRecord = {
+  direction: "IN" | "OUT";
+  server_ts: string;
+  punch_kind: PunchKind | null;
+};
 export type AdvanceRecord = {
   id: string;
   amount: number;
@@ -74,7 +79,7 @@ export default function MainScreen({
           .gte("work_date", monthStart),
         supabase
           .from("attendance_app")
-          .select("direction, server_ts")
+          .select("direction, server_ts, punch_kind")
           .eq("profile_id", profile.id)
           .gte("server_ts", dayStartUtc)
           .order("server_ts"),

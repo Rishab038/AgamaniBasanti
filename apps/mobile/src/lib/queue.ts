@@ -21,6 +21,7 @@ export type CheckinRow = {
   profile_id: string;
   branch_id: string;
   direction: "IN" | "OUT";
+  punch_kind: "ARRIVAL" | "LUNCH_OUT" | "LUNCH_IN" | "DEPARTURE";
   client_ts: string;
   lat: number | null;
   lng: number | null;

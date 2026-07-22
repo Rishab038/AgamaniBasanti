@@ -1,6 +1,10 @@
 // "Warm & friendly" tokens — cream ground, cocoa ink, terracotta
 // accent, rounded Nunito. Shared across every screen.
 
+// Matches the dashboard's system (see apps/admin/src/index.css):
+// neutral ground, ONE accent, and only three text weights. Heavy
+// rounded type everywhere was what made the old version look unserious.
+
 export const colors = {
   bg: "#faf6f0",
   surface: "#ffffff",
@@ -25,13 +29,16 @@ export const colors = {
   seriousBg: "#f9e7e2",
 };
 
-// Nunito is loaded in App.tsx; Android ignores fontWeight for custom
-// fonts, so always style text with these families instead.
+// Inter, three weights. Android ignores fontWeight for custom fonts,
+// so text must name the family rather than set a weight.
+// `black`/`extra` are kept as aliases so existing screens keep working;
+// both map to semibold, which is the heaviest weight this design uses.
 export const fonts = {
-  semi: "Nunito_600SemiBold",
-  bold: "Nunito_700Bold",
-  extra: "Nunito_800ExtraBold",
-  black: "Nunito_900Black",
+  regular: "Inter_400Regular",
+  semi: "Inter_400Regular",
+  bold: "Inter_500Medium",
+  extra: "Inter_600SemiBold",
+  black: "Inter_600SemiBold",
 };
 
 export const radius = { sm: 12, md: 16, lg: 22, pill: 999 };

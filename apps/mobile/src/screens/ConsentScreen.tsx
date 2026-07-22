@@ -5,6 +5,11 @@
 // before it is collected. So this is deliberately short, concrete and
 // free of legal boilerplate, and the acknowledgement is recorded
 // against the profile rather than assumed.
+//
+// Selfie capture was removed: the fingerprint machine already proves
+// physical presence, so the photo added a privacy burden without
+// adding evidence. Saying so plainly here is worth more than the
+// feature was.
 
 import { useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -13,24 +18,24 @@ import { colors, fonts, radius, shadow } from "../lib/theme";
 
 const POINTS = [
   {
-    icon: "📸",
-    title: "A selfie at each punch",
-    body: "Taken only when you tap Check in or Check out — never at any other time.",
-  },
-  {
     icon: "📍",
-    title: "Your location at that moment",
-    body: "Only to confirm you are at the shop. The app does not follow you afterwards.",
+    title: "Your location when you punch",
+    body: "Only at that moment, to confirm you are at the shop. The app does not follow you at any other time.",
   },
   {
-    icon: "🗓️",
-    title: "Kept for 90 days",
-    body: "Photos are deleted automatically after that. Your attendance record stays.",
+    icon: "🕒",
+    title: "The time of each entry",
+    body: "Your check-in, lunch break and check-out — nothing else.",
+  },
+  {
+    icon: "📵",
+    title: "No photos",
+    body: "The app never takes your picture. Your fingerprint on the shop machine is the second check.",
   },
   {
     icon: "👤",
     title: "Who can see it",
-    body: "Only the shop owner. Other staff can never see your photos, salary or advances.",
+    body: "Only the shop owner. Other staff can never see your attendance, salary or advances.",
   },
 ];
 

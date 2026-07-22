@@ -369,7 +369,7 @@ export default function Settings() {
           value={newDevice.model}
           onChange={(e) => setNewDevice({ ...newDevice, model: e.target.value })}
         />
-        <label>
+        <span className="inline-label">
           At which shop?
           <select
             value={newDevice.branch_id || branchId || ""}
@@ -377,7 +377,7 @@ export default function Settings() {
           >
             {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>
-        </label>
+        </span>
         <button className="btn primary" type="submit">Register machine</button>
       </form>
 

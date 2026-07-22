@@ -1,11 +1,19 @@
-// Home tab — straight from the mockup: greeting + shift, geofence
-// chip, one giant round button, selfie hint, three stat tiles.
+// Home tab — the worker's day, as four steps.
+//
+//   1 CHECK IN        arrival
+//   2 LUNCH BREAK     out for the one-hour break (or CHECK OUT to go home)
+//   3 BACK FROM LUNCH return to the floor
+//   4 CHECK OUT       going home
+//
+// After the fourth the day is closed. Modelling it as named stages
+// rather than an IN/OUT toggle is what lets the app say exactly what
+// the next tap will do — and stops the lunch hour being counted as
+// time on the floor.
 
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
-  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -16,27 +24,26 @@ import {
 } from "react-native";
 import * as Location from "expo-location";
 import * as Haptics from "expo-haptics";
-import { CameraView, useCameraPermissions } from "expo-camera";
 import { Branch, Profile, supabase } from "../../lib/supabase";
 import { evaluateFence, FenceResult } from "../../lib/geofence";
 import { runSpoofChecks } from "../../lib/antispoof";
 import { performCheckin } from "../../lib/checkin";
 import { pendingCount } from "../../lib/queue";
 import { colors, fonts, radius, shadow } from "../../lib/theme";
-import type { SharedData } from "../MainScreen";
+import type { PunchKind, SharedData } from "../MainScreen";
+
+const GRACE_MIN = 15;
 
 const fmtShiftTime = (t: string) => {
   const [h, m] = t.split(":").map(Number);
   const h12 = ((h + 11) % 12) + 1;
   return `${h12}:${String(m).padStart(2, "0")}`;
 };
-
 const fmtClock = (d: Date) =>
   d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true });
+const fmtPunch = (ts: string) =>
+  new Date(ts).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true });
 
-const GRACE_MIN = 15;
-
-/** minutes from now to a "HH:MM[:SS]" time today, in local (IST) terms */
 function minutesFrom(now: Date, hhmmss: string | null): number | null {
   if (!hhmmss) return null;
   const [h, m] = hhmmss.split(":").map(Number);
@@ -45,30 +52,42 @@ function minutesFrom(now: Date, hhmmss: string | null): number | null {
   return Math.round((now.getTime() - target.getTime()) / 60000);
 }
 
-/**
- * Punching outside the shift window is allowed but goes to the owner
- * for a decision. Saying so before the tap is the difference between
- * "the app is broken" and "I know why this needs approval".
- */
-function windowNotice(
-  now: Date,
-  direction: "IN" | "OUT",
-  shiftStart: string | null,
-  shiftEnd: string | null,
-): string | null {
-  if (direction === "IN") {
-    const d = minutesFrom(now, shiftStart);
-    if (d === null) return null;
-    if (d > GRACE_MIN) return "You are late — the owner will be asked to approve this.";
-    if (d < -GRACE_MIN) return "It is early for your shift — the owner will be asked to approve.";
-    return null;
+type Stage = {
+  kind: PunchKind;
+  direction: "IN" | "OUT";
+  label: string;
+  hint: string;
+  tone: "start" | "break" | "end";
+};
+
+/** what the next tap does, from what has already been recorded today */
+function nextStage(kinds: (PunchKind | null)[]): Stage | null {
+  const has = (k: PunchKind) => kinds.includes(k);
+  if (!has("ARRIVAL")) {
+    return {
+      kind: "ARRIVAL", direction: "IN",
+      label: "CHECK IN", hint: "Start your day", tone: "start",
+    };
   }
-  const d = minutesFrom(now, shiftEnd);
-  if (d === null) return null;
-  if (d < -GRACE_MIN) return "Leaving before your shift ends — the owner will decide how this day counts.";
-  if (d > GRACE_MIN) return "You are staying past your shift end — this will be sent for approval.";
-  return null;
+  if (has("DEPARTURE")) return null;             // day already closed
+  if (has("LUNCH_OUT") && !has("LUNCH_IN")) {
+    return {
+      kind: "LUNCH_IN", direction: "IN",
+      label: "BACK FROM\nLUNCH", hint: "Return to work", tone: "start",
+    };
+  }
+  return {
+    kind: "DEPARTURE", direction: "OUT",
+    label: "CHECK OUT", hint: "Finish your day", tone: "end",
+  };
 }
+
+const KIND_LABEL: Record<string, string> = {
+  ARRIVAL: "Checked in",
+  LUNCH_OUT: "Lunch break",
+  LUNCH_IN: "Back from lunch",
+  DEPARTURE: "Checked out",
+};
 
 export default function HomeTab({
   profile,
@@ -81,27 +100,22 @@ export default function HomeTab({
 }) {
   const [location, setLocation] = useState<Location.LocationObject | null>(null);
   const [fence, setFence] = useState<FenceResult>({ inside: false, distance: null, via: "none" });
-  const [cameraOpen, setCameraOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [success, setSuccess] = useState<{ title: string; sub: string } | null>(null);
   const [blocked, setBlocked] = useState<string | null>(null);
-  const [confirmQuickOut, setConfirmQuickOut] = useState(false);
-  const [camPerm, requestCamPerm] = useCameraPermissions();
   const [locGranted, setLocGranted] = useState<boolean | null>(null);
-  const cameraRef = useRef<CameraView>(null);
   const press = useRef(new Animated.Value(1)).current;
   const successAnim = useRef(new Animated.Value(0)).current;
 
   const punches = data.todayPunches;
-  const direction: "IN" | "OUT" =
-    punches.length > 0 && punches[punches.length - 1].direction === "IN" ? "OUT" : "IN";
-  const isOut = direction === "OUT";
-  const enabled = fence.inside && !busy;
+  const kinds = punches.map((p) => p.punch_kind);
+  const stage = nextStage(kinds);
+  const dayClosed = stage === null;
+  const canTakeLunch =
+    kinds.includes("ARRIVAL") && !kinds.includes("LUNCH_OUT") && !kinds.includes("DEPARTURE");
+  const enabled = fence.inside && !busy && !dayClosed;
 
-  // month numbers for the stat tiles. Salary is deliberately absent:
-  // showing a running estimate invites payday arguments when it does not
-  // match the owner's final figure.
   const worked = data.monthDays.filter((d) =>
     ["VERIFIED", "APP_ONLY", "DEVICE_ONLY"].includes(d.status),
   ).length;
@@ -125,7 +139,7 @@ export default function HomeTab({
               branchLat: branch.lat,
               branchLng: branch.lng,
               radiusM: branch.radius_m,
-              currentSsid: null, // Phase 1: netinfo SSID in dev build
+              currentSsid: null,
               branchSsid: branch.wifi_ssid,
             }),
           );
@@ -146,91 +160,78 @@ export default function HomeTab({
     successAnim.setValue(0);
     Animated.sequence([
       Animated.spring(successAnim, { toValue: 1, useNativeDriver: true, speed: 12, bounciness: 8 }),
-      Animated.delay(1900),
+      Animated.delay(1800),
       Animated.timing(successAnim, { toValue: 0, duration: 280, useNativeDriver: true }),
     ]).start(() => setSuccess(null));
   };
 
-  const startCheckin = async () => {
+  /** record a punch — one tap, no camera step */
+  const punch = async (s: Stage) => {
+    if (busy) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
-    // The button flips to CHECK OUT the moment you check in, so a
-    // second tap — very natural when you are not sure the first one
-    // registered — used to check people straight back out. One worker
-    // did exactly this today, 22 seconds after arriving.
-    if (direction === "OUT" && !confirmQuickOut) {
-      const lastIn = punches.filter((p) => p.direction === "IN").at(-1);
-      const minsSinceIn = lastIn
-        ? (Date.now() - new Date(lastIn.server_ts).getTime()) / 60000
-        : Infinity;
-      if (minsSinceIn < 30) {
-        setConfirmQuickOut(true);
-        return;
-      }
-    }
-    setConfirmQuickOut(false);
-    if (!camPerm?.granted) {
-      const p = await requestCamPerm();
-      if (!p.granted) {
-        setBlocked("Attendance needs a selfie. Please allow the camera and try again.");
-        return;
-      }
-    }
-    setBlocked(null);
-    setCameraOpen(true);
-  };
-
-  const capture = async () => {
-    if (!cameraRef.current || busy) return;
     setBusy(true);
+    setBlocked(null);
     try {
       const spoof = location
         ? await runSpoofChecks(location)
         : { hardBlock: false, reasons: ["no_gps_fix"] };
       if (spoof.hardBlock) {
-        setCameraOpen(false);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         setBlocked("Location problem detected. Switch off any fake-location app and try again.");
         return;
       }
 
-      const photo = await cameraRef.current.takePictureAsync({ quality: 0.7 });
       const { queued } = await performCheckin({
         profileId: profile.id,
         branchId: branch.id,
-        direction,
+        direction: s.direction,
+        punchKind: s.kind,
         location,
         wifiSsid: null,
-        selfieUri: photo.uri,
         flagReasons: [...spoof.reasons, ...(fence.via === "wifi" ? ["wifi_fallback"] : [])],
       });
 
-      setCameraOpen(false);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       showSuccess(
-        direction === "IN" ? "Checked in!" : "Checked out!",
-        queued
-          ? "Saved on your phone — sends when internet returns"
-          : `at ${fmtClock(new Date())} · selfie saved`,
+        KIND_LABEL[s.kind],
+        queued ? "Saved — sends when internet returns" : `at ${fmtClock(new Date())}`,
       );
       await data.reload();
-    } catch {
+    } catch (e) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      setCameraOpen(false);
-      setBlocked("Something went wrong. Please try again in a minute.");
+      const msg = (e as Error)?.message ?? "";
+      setBlocked(
+        msg.includes("full day")
+          ? "You have already recorded your full day."
+          : "Something went wrong. Please try again in a minute.",
+      );
     } finally {
       setBusy(false);
     }
   };
 
-  const shiftNotice = windowNotice(
-    new Date(), direction, profile.shift_start, profile.shift_end,
-  );
+  // out-of-window warning for the stage about to be recorded
+  const shiftNotice = (() => {
+    if (!stage) return null;
+    if (stage.kind === "ARRIVAL") {
+      const d = minutesFrom(new Date(), profile.shift_start);
+      if (d === null) return null;
+      if (d > GRACE_MIN) return "You are late — the owner will be asked to approve this.";
+      if (d < -GRACE_MIN) return "It is early for your shift — the owner will be asked to approve.";
+    }
+    if (stage.kind === "DEPARTURE") {
+      const d = minutesFrom(new Date(), profile.shift_end);
+      if (d === null) return null;
+      if (d < -GRACE_MIN) return "Leaving before your shift ends — the owner will decide how this day counts.";
+      if (d > GRACE_MIN) return "You are staying past your shift end — this will be sent for approval.";
+    }
+    return null;
+  })();
+
   const initials = profile.full_name.trim()[0]?.toUpperCase() ?? "?";
-  // each worker now carries their own timings, set by the owner
   const shiftLine = profile.shift_start
-    ? ` · Shift ${fmtShiftTime(profile.shift_start)} – ${fmtShiftTime(profile.shift_end ?? "")}`
-    : "";
+    ? `${fmtShiftTime(profile.shift_start)} – ${fmtShiftTime(profile.shift_end ?? "")}`
+    : null;
 
   return (
     <ScrollView
@@ -239,13 +240,12 @@ export default function HomeTab({
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
       }
     >
-      {/* greeting */}
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
           <Text style={styles.greeting}>Namaste, {profile.full_name.split(" ")[0]}</Text>
           <Text style={styles.date}>
             {new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}
-            {shiftLine}
+            {shiftLine ? ` · ${shiftLine}` : ""}
           </Text>
         </View>
         <View style={styles.avatar}>
@@ -253,14 +253,13 @@ export default function HomeTab({
         </View>
       </View>
 
-      {/* geofence chip */}
       <View style={[styles.chip, fence.inside ? styles.chipGood : styles.chipNeutral]}>
         <View style={[styles.chipDot, { backgroundColor: fence.inside ? colors.good : colors.ink3 }]} />
         <Text style={[styles.chipText, fence.inside && { color: colors.good }]}>
           {locGranted === false
             ? "Allow location to check in at the shop"
             : fence.inside
-              ? `You are at the shop — ready to check ${isOut ? "out" : "in"}`
+              ? "You are at the shop"
               : fence.distance !== null
                 ? `You are ${fence.distance} m from the shop`
                 : "Finding your location…"}
@@ -268,79 +267,112 @@ export default function HomeTab({
       </View>
 
       {data.pending > 0 && (
-        <View style={styles.pendingBanner}>
-          <Text style={styles.pendingText}>
+        <View style={styles.noticeAmber}>
+          <Text style={styles.noticeAmberText}>
             {data.pending} check-in{data.pending > 1 ? "s" : ""} saved — will send when internet returns
           </Text>
         </View>
       )}
       {blocked && (
-        <Pressable style={styles.blockedBanner} onPress={() => setBlocked(null)}>
-          <Text style={styles.blockedText}>{blocked}</Text>
+        <Pressable style={styles.noticeRed} onPress={() => setBlocked(null)}>
+          <Text style={styles.noticeRedText}>{blocked}</Text>
+        </Pressable>
+      )}
+      {shiftNotice && (
+        <View style={styles.noticeAmber}>
+          <Text style={styles.noticeAmberText}>{shiftNotice}</Text>
+        </View>
+      )}
+
+      {/* the one action */}
+      <View style={styles.buttonWrap}>
+        {dayClosed ? (
+          <View style={[styles.bigButton, styles.bigButtonDone]}>
+            <Text style={styles.doneTick}>✓</Text>
+            <Text style={styles.doneText}>Day complete</Text>
+            <Text style={styles.doneSub}>See you tomorrow</Text>
+          </View>
+        ) : (
+          <Animated.View style={{ transform: [{ scale: press }] }}>
+            <Pressable
+              onPressIn={() =>
+                Animated.spring(press, { toValue: 0.95, useNativeDriver: true, speed: 30 }).start()
+              }
+              onPressOut={() =>
+                Animated.spring(press, { toValue: 1, useNativeDriver: true, speed: 18 }).start()
+              }
+              onPress={() => stage && punch(stage)}
+              disabled={!enabled}
+              style={[
+                styles.bigButton,
+                stage?.tone === "end" ? styles.bigButtonEnd : styles.bigButtonStart,
+                enabled ? shadow.button : styles.bigButtonDisabled,
+              ]}
+            >
+              <Text style={[styles.bigButtonText, !enabled && styles.textDisabled]}>
+                {stage?.label}
+              </Text>
+              <Text style={[styles.bigButtonSub, !enabled && styles.textDisabled]}>
+                {enabled ? stage?.hint : "Come closer to the shop"}
+              </Text>
+            </Pressable>
+          </Animated.View>
+        )}
+      </View>
+
+      {/* lunch is a secondary action, never competing with the main one */}
+      {canTakeLunch && (
+        <Pressable
+          style={[styles.lunchBtn, !fence.inside && styles.lunchBtnDisabled]}
+          disabled={!fence.inside || busy}
+          onPress={() =>
+            punch({
+              kind: "LUNCH_OUT", direction: "OUT",
+              label: "LUNCH", hint: "", tone: "break",
+            })
+          }
+        >
+          <Text style={[styles.lunchText, !fence.inside && styles.textDisabled]}>
+            Going for lunch break
+          </Text>
         </Pressable>
       )}
 
-      {/* the button */}
-      <View style={styles.buttonWrap}>
-        <Animated.View style={{ transform: [{ scale: press }] }}>
-          <Pressable
-            onPressIn={() =>
-              Animated.spring(press, { toValue: 0.95, useNativeDriver: true, speed: 30 }).start()
-            }
-            onPressOut={() =>
-              Animated.spring(press, { toValue: 1, useNativeDriver: true, speed: 18 }).start()
-            }
-            onPress={startCheckin}
-            disabled={!enabled}
-            style={[
-              styles.bigButton,
-              isOut ? styles.bigButtonOut : null,
-              enabled ? (isOut ? shadow.buttonGood : shadow.button) : styles.bigButtonDisabled,
-            ]}
-          >
-            <Text style={[styles.bigButtonText, !enabled && styles.bigButtonTextDisabled]}>
-              {isOut ? "CHECK OUT" : "CHECK IN"}
-            </Text>
-            <Text style={[styles.bigButtonSub, !enabled && styles.bigButtonTextDisabled]}>
-              {enabled ? "Tap once, then take selfie" : "Come closer to the shop"}
-            </Text>
-          </Pressable>
-        </Animated.View>
-      </View>
-
-      {confirmQuickOut && (
-        <View style={styles.confirmBanner}>
-          <Text style={styles.confirmTitle}>You checked in just now</Text>
-          <Text style={styles.confirmBody}>
-            Tap CHECK OUT again only if you are really leaving the shop.
-          </Text>
-          <Pressable style={styles.confirmCancel} onPress={() => setConfirmQuickOut(false)}>
-            <Text style={styles.confirmCancelText}>No, I am staying</Text>
-          </Pressable>
-        </View>
-      )}
-
-      {shiftNotice && (
-        <View style={styles.windowBanner}>
-          <Text style={styles.windowText}>{shiftNotice}</Text>
-        </View>
-      )}
-
       <Text style={styles.selfieHint}>
-        A selfie with time & location stamp will be saved automatically
+        Your time and location are recorded with every entry
       </Text>
 
-      {/* stat tiles */}
+      {/* today's timeline */}
+      {punches.length > 0 && (
+        <View style={styles.card}>
+          <Text style={styles.cardLabel}>TODAY</Text>
+          {punches.map((p, i) => (
+            <View key={i} style={styles.timelineRow}>
+              <View
+                style={[
+                  styles.timelineDot,
+                  { backgroundColor: p.direction === "IN" ? colors.good : colors.accent },
+                ]}
+              />
+              <Text style={styles.timelineLabel}>
+                {KIND_LABEL[p.punch_kind ?? ""] ?? (p.direction === "IN" ? "Checked in" : "Checked out")}
+              </Text>
+              <Text style={styles.timelineTime}>{fmtPunch(p.server_ts)}</Text>
+            </View>
+          ))}
+        </View>
+      )}
+
       <View style={styles.tiles}>
-        <View style={[styles.tile, shadow.card]}>
+        <View style={styles.tile}>
           <Text style={[styles.tileValue, { color: colors.good }]}>{worked}</Text>
           <Text style={styles.tileLabel}>Days present</Text>
         </View>
-        <View style={[styles.tile, shadow.card]}>
+        <View style={styles.tile}>
           <Text style={[styles.tileValue, absent > 0 && { color: colors.rose }]}>{absent}</Text>
           <Text style={styles.tileLabel}>Days absent</Text>
         </View>
-        <View style={[styles.tile, shadow.card]}>
+        <View style={styles.tile}>
           <Text style={[styles.tileValue, data.advancePaid > 0 && { color: colors.accent }]}>
             ₹{data.advancePaid.toLocaleString("en-IN")}
           </Text>
@@ -352,7 +384,6 @@ export default function HomeTab({
         <Text style={styles.logout}>Log out</Text>
       </TouchableOpacity>
 
-      {/* success overlay */}
       {success && (
         <Animated.View style={[styles.successWrap, { opacity: successAnim }]} pointerEvents="none">
           <Animated.View
@@ -361,7 +392,7 @@ export default function HomeTab({
               shadow.card,
               {
                 transform: [{
-                  scale: successAnim.interpolate({ inputRange: [0, 1], outputRange: [0.8, 1] }),
+                  scale: successAnim.interpolate({ inputRange: [0, 1], outputRange: [0.85, 1] }),
                 }],
               },
             ]}
@@ -375,260 +406,155 @@ export default function HomeTab({
         </Animated.View>
       )}
 
-      {/* camera */}
-      <Modal visible={cameraOpen} animationType="slide">
-        <View style={styles.cameraContainer}>
-          <View style={styles.cameraTop}>
-            <Text style={styles.cameraTitle}>
-              {isOut ? "Checking out" : "Checking in"} · {fmtClock(new Date())}
-            </Text>
-            <Text style={styles.cameraHint}>Keep your face inside the circle</Text>
-          </View>
-          <View style={styles.cameraFrame}>
-            <CameraView ref={cameraRef} style={styles.camera} facing="front" />
-            <View pointerEvents="none" style={styles.faceGuide} />
-          </View>
-          <View style={styles.cameraControls}>
-            <TouchableOpacity
-              style={styles.cancelButton}
-              onPress={() => setCameraOpen(false)}
-              disabled={busy}
-            >
-              <Text style={styles.cancelText}>Cancel</Text>
-            </TouchableOpacity>
-            <Pressable
-              style={({ pressed }) => [styles.shutter, pressed && { transform: [{ scale: 0.9 }] }]}
-              onPress={capture}
-              disabled={busy}
-            >
-              {busy
-                ? <ActivityIndicator color={colors.accent} />
-                : <View style={styles.shutterInner} />}
-            </Pressable>
-            <View style={{ width: 76 }} />
-          </View>
-        </View>
-      </Modal>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  scroll: { padding: 22, paddingTop: 62, paddingBottom: 26 },
+  scroll: { padding: 20, paddingTop: 58, paddingBottom: 24 },
 
   header: { flexDirection: "row", alignItems: "center", gap: 12 },
-  greeting: { fontFamily: fonts.black, fontSize: 26, color: colors.ink, letterSpacing: -0.4 },
-  date: { fontFamily: fonts.semi, fontSize: 13.5, color: colors.ink3, marginTop: 2 },
+  greeting: { fontFamily: fonts.black, fontSize: 23, color: colors.ink, letterSpacing: -0.3 },
+  date: { fontFamily: fonts.semi, fontSize: 13, color: colors.ink3, marginTop: 2 },
   avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 44, height: 44, borderRadius: 22,
     backgroundColor: colors.line,
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: "center", justifyContent: "center",
   },
-  avatarText: { fontFamily: fonts.extra, fontSize: 18, color: colors.ink2 },
+  avatarText: { fontFamily: fonts.extra, fontSize: 17, color: colors.ink2 },
 
   chip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 9,
-    borderRadius: radius.md,
-    paddingVertical: 13,
-    paddingHorizontal: 16,
-    marginTop: 20,
+    flexDirection: "row", alignItems: "center", gap: 9,
+    borderRadius: 12, paddingVertical: 11, paddingHorizontal: 14, marginTop: 16,
   },
   chipGood: { backgroundColor: colors.goodBg },
   chipNeutral: { backgroundColor: "#f3ece1" },
-  chipDot: { width: 9, height: 9, borderRadius: 5 },
-  chipText: { fontFamily: fonts.bold, fontSize: 14, color: colors.ink2, flex: 1 },
+  chipDot: { width: 8, height: 8, borderRadius: 4 },
+  chipText: { fontFamily: fonts.bold, fontSize: 13.5, color: colors.ink2, flex: 1 },
 
-  pendingBanner: {
-    backgroundColor: colors.amberBg,
-    borderRadius: radius.md,
-    padding: 12,
-    marginTop: 12,
+  noticeAmber: {
+    backgroundColor: colors.amberBg, borderRadius: 12, padding: 11, marginTop: 10,
   },
-  pendingText: { fontFamily: fonts.bold, color: colors.amber, fontSize: 13, textAlign: "center" },
-  blockedBanner: {
-    backgroundColor: colors.seriousBg,
-    borderRadius: radius.md,
-    padding: 12,
-    marginTop: 12,
+  noticeAmberText: {
+    fontFamily: fonts.bold, color: colors.amber, fontSize: 13, textAlign: "center", lineHeight: 18,
   },
-  blockedText: { fontFamily: fonts.bold, color: colors.serious, fontSize: 13, textAlign: "center" },
+  noticeRed: {
+    backgroundColor: colors.seriousBg, borderRadius: 12, padding: 11, marginTop: 10,
+  },
+  noticeRedText: {
+    fontFamily: fonts.bold, color: colors.serious, fontSize: 13, textAlign: "center", lineHeight: 18,
+  },
 
-  buttonWrap: { alignItems: "center", marginTop: 34, marginBottom: 18 },
+  buttonWrap: { alignItems: "center", marginTop: 30, marginBottom: 14 },
   bigButton: {
-    width: 210,
-    height: 210,
-    borderRadius: 105,
-    backgroundColor: colors.accent,
-    alignItems: "center",
-    justifyContent: "center",
-    borderBottomWidth: 6,
-    borderBottomColor: "rgba(58,47,40,0.18)",
+    width: 208, height: 208, borderRadius: 104,
+    alignItems: "center", justifyContent: "center",
   },
-  bigButtonOut: { backgroundColor: colors.good },
-  bigButtonDisabled: {
-    backgroundColor: colors.line,
-    borderBottomColor: "rgba(58,47,40,0.06)",
+  bigButtonStart: { backgroundColor: colors.accent },
+  bigButtonEnd: { backgroundColor: colors.good },
+  bigButtonDone: { backgroundColor: colors.goodBg },
+  bigButtonDisabled: { backgroundColor: colors.line },
+  bigButtonText: {
+    fontFamily: fonts.black, fontSize: 25, color: "#fff",
+    letterSpacing: 0.5, textAlign: "center", lineHeight: 31,
   },
-  bigButtonText: { fontFamily: fonts.black, fontSize: 27, color: "#fff", letterSpacing: 0.5 },
   bigButtonSub: {
-    fontFamily: fonts.bold,
-    fontSize: 13,
-    color: "rgba(255,255,255,0.85)",
-    marginTop: 6,
-    paddingHorizontal: 24,
-    textAlign: "center",
+    fontFamily: fonts.bold, fontSize: 12.5, color: "rgba(255,255,255,0.85)",
+    marginTop: 6, textAlign: "center", paddingHorizontal: 20,
   },
-  bigButtonTextDisabled: { color: colors.ink3 },
+  textDisabled: { color: colors.ink3 },
+  doneTick: { fontFamily: fonts.black, fontSize: 44, color: colors.good },
+  doneText: { fontFamily: fonts.black, fontSize: 19, color: colors.good, marginTop: 4 },
+  doneSub: { fontFamily: fonts.semi, fontSize: 13, color: colors.ink2, marginTop: 2 },
 
-  confirmBanner: {
-    backgroundColor: colors.seriousBg,
-    borderWidth: 1,
-    borderColor: "#f0cfc6",
-    borderRadius: radius.md,
-    padding: 14,
-    marginBottom: 14,
-    alignItems: "center",
-  },
-  confirmTitle: { fontFamily: fonts.extra, color: colors.serious, fontSize: 15 },
-  confirmBody: {
-    fontFamily: fonts.semi,
-    color: colors.ink2,
-    fontSize: 13.5,
-    textAlign: "center",
-    marginTop: 4,
-    lineHeight: 19,
-  },
-  confirmCancel: {
-    marginTop: 10,
-    paddingVertical: 9,
-    paddingHorizontal: 20,
-    borderRadius: radius.pill,
+  lunchBtn: {
+    alignSelf: "center",
+    paddingVertical: 11, paddingHorizontal: 22,
+    borderRadius: 999,
+    borderWidth: 1.5, borderColor: colors.line2,
     backgroundColor: colors.surface,
+    marginBottom: 12,
   },
-  confirmCancelText: { fontFamily: fonts.extra, color: colors.ink, fontSize: 14 },
-  windowBanner: {
-    backgroundColor: colors.amberBg,
-    borderRadius: radius.md,
-    paddingVertical: 11,
-    paddingHorizontal: 14,
-    marginBottom: 14,
-  },
-  windowText: {
-    fontFamily: fonts.bold,
-    color: colors.amber,
-    fontSize: 13.5,
-    textAlign: "center",
-    lineHeight: 19,
-  },
+  lunchBtnDisabled: { opacity: 0.45 },
+  lunchText: { fontFamily: fonts.extra, fontSize: 14, color: colors.ink2 },
+
   selfieHint: {
-    fontFamily: fonts.semi,
-    fontSize: 13,
-    color: colors.ink3,
-    textAlign: "center",
-    paddingHorizontal: 30,
-    lineHeight: 19,
+    fontFamily: fonts.semi, fontSize: 12.5, color: colors.ink3,
+    textAlign: "center", paddingHorizontal: 30, lineHeight: 18, marginBottom: 4,
   },
 
-  tiles: { flexDirection: "row", gap: 10, marginTop: 24 },
+  card: {
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.line,
+    borderRadius: 14, padding: 16, marginTop: 16,
+  },
+  cardLabel: {
+    fontFamily: fonts.extra, fontSize: 10.5, color: colors.ink3,
+    letterSpacing: 1.2, marginBottom: 10,
+  },
+  timelineRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 6 },
+  timelineDot: { width: 8, height: 8, borderRadius: 4 },
+  timelineLabel: { fontFamily: fonts.bold, fontSize: 14.5, color: colors.ink, flex: 1 },
+  timelineTime: { fontFamily: fonts.extra, fontSize: 13.5, color: colors.ink2 },
+
+  tiles: { flexDirection: "row", gap: 8, marginTop: 12 },
   tile: {
     flex: 1,
     backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: radius.md,
-    paddingVertical: 16,
-    paddingHorizontal: 8,
-    alignItems: "center",
+    borderWidth: 1, borderColor: colors.line,
+    borderRadius: 12, paddingVertical: 13, alignItems: "center",
   },
-  tileValue: { fontFamily: fonts.black, fontSize: 19, color: colors.ink },
-  tileLabel: { fontFamily: fonts.bold, fontSize: 11.5, color: colors.ink3, marginTop: 3 },
+  tileValue: { fontFamily: fonts.black, fontSize: 18, color: colors.ink },
+  tileLabel: { fontFamily: fonts.bold, fontSize: 11, color: colors.ink3, marginTop: 2 },
 
   logout: {
-    fontFamily: fonts.bold,
-    textAlign: "center",
-    color: colors.ink3,
-    fontSize: 13,
-    padding: 16,
-    marginTop: 4,
+    fontFamily: fonts.bold, textAlign: "center", color: colors.ink3,
+    fontSize: 13, padding: 18,
   },
 
   successWrap: {
-    position: "absolute",
-    top: 0, left: 0, right: 0, bottom: 0,
-    alignItems: "center",
-    justifyContent: "center",
+    position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+    alignItems: "center", justifyContent: "center",
     backgroundColor: "rgba(58,47,40,0.35)",
   },
   successCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    paddingVertical: 30,
-    paddingHorizontal: 34,
-    alignItems: "center",
-    maxWidth: 300,
+    backgroundColor: colors.surface, borderRadius: 20,
+    paddingVertical: 28, paddingHorizontal: 32, alignItems: "center", maxWidth: 300,
   },
   successCircle: {
-    width: 74,
-    height: 74,
-    borderRadius: 37,
-    backgroundColor: colors.goodBg,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 14,
+    width: 68, height: 68, borderRadius: 34, backgroundColor: colors.goodBg,
+    alignItems: "center", justifyContent: "center", marginBottom: 12,
   },
-  successTick: { fontFamily: fonts.black, fontSize: 36, color: colors.good },
-  successTitle: { fontFamily: fonts.black, fontSize: 23, color: colors.ink },
+  successTick: { fontFamily: fonts.black, fontSize: 32, color: colors.good },
+  successTitle: { fontFamily: fonts.black, fontSize: 21, color: colors.ink, textAlign: "center" },
   successSub: {
-    fontFamily: fonts.semi,
-    fontSize: 14,
-    color: colors.ink2,
-    marginTop: 5,
-    textAlign: "center",
+    fontFamily: fonts.semi, fontSize: 13.5, color: colors.ink2,
+    marginTop: 4, textAlign: "center",
   },
 
   cameraContainer: { flex: 1, backgroundColor: "#241d18" },
-  cameraTop: { paddingTop: 60, paddingBottom: 16, alignItems: "center" },
-  cameraTitle: { fontFamily: fonts.extra, color: "#fff", fontSize: 17 },
+  cameraTop: { paddingTop: 58, paddingBottom: 14, alignItems: "center" },
+  cameraTitle: { fontFamily: fonts.extra, color: "#fff", fontSize: 16.5 },
   cameraHint: { fontFamily: fonts.semi, color: "rgba(255,255,255,0.7)", fontSize: 13, marginTop: 3 },
-  cameraFrame: { flex: 1, marginHorizontal: 16, borderRadius: radius.lg, overflow: "hidden" },
+  cameraFrame: { flex: 1, marginHorizontal: 16, borderRadius: 22, overflow: "hidden" },
   camera: { flex: 1 },
   faceGuide: {
-    position: "absolute",
-    top: "13%",
-    alignSelf: "center",
-    width: 235,
-    height: 295,
-    borderRadius: 150,
-    borderWidth: 2.5,
-    borderColor: "rgba(255,255,255,0.6)",
-    borderStyle: "dashed",
+    position: "absolute", top: "13%", alignSelf: "center",
+    width: 235, height: 295, borderRadius: 150,
+    borderWidth: 2.5, borderColor: "rgba(255,255,255,0.6)", borderStyle: "dashed",
   },
   cameraControls: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 24,
+    flexDirection: "row", justifyContent: "space-between",
+    alignItems: "center", padding: 22,
   },
   cancelButton: { width: 76 },
   cancelText: { fontFamily: fonts.bold, color: "rgba(255,255,255,0.8)", fontSize: 15 },
   shutter: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    backgroundColor: "#fff",
-    alignItems: "center",
-    justifyContent: "center",
+    width: 74, height: 74, borderRadius: 37, backgroundColor: "#fff",
+    alignItems: "center", justifyContent: "center",
   },
   shutterInner: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    borderWidth: 4,
-    borderColor: colors.accent,
+    width: 58, height: 58, borderRadius: 29,
+    borderWidth: 4, borderColor: colors.accent,
   },
 });
