@@ -4,8 +4,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { Branch, Profile, supabase } from "../lib/supabase";
 import { drain, pendingCount } from "../lib/queue";
+import { registerForPush } from "../lib/push";
 import { colors, fonts, radius, shadow } from "../lib/theme";
 import HomeTab from "./tabs/HomeTab";
 import AttendanceTab from "./tabs/AttendanceTab";
@@ -42,9 +44,9 @@ export type SharedData = {
 const istToday = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 
 const TABS = [
-  { key: "home", label: "Home" },
-  { key: "attendance", label: "Attendance" },
-  { key: "money", label: "Money" },
+  { key: "home", label: "Home", icon: "home-outline", iconOn: "home" },
+  { key: "attendance", label: "Attendance", icon: "calendar-outline", iconOn: "calendar" },
+  { key: "money", label: "Money", icon: "wallet-outline", iconOn: "wallet" },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -129,6 +131,10 @@ export default function MainScreen({
   }, [reload]);
 
   useEffect(() => {
+    registerForPush(profile.id);
+  }, [profile.id]);
+
+  useEffect(() => {
     if (!shift && profile.shift_id) {
       supabase
         .from("shifts")
@@ -161,7 +167,11 @@ export default function MainScreen({
               onPress={() => setTab(t.key)}
               activeOpacity={0.7}
             >
-              <View style={[styles.tabIcon, active && styles.tabIconActive]} />
+              <Ionicons
+                name={active ? t.iconOn : t.icon}
+                size={22}
+                color={active ? colors.accent : colors.ink3}
+              />
               <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{t.label}</Text>
             </TouchableOpacity>
           );
@@ -185,13 +195,6 @@ const styles = StyleSheet.create({
     paddingBottom: 22,
   },
   tabItem: { flex: 1, alignItems: "center", gap: 4 },
-  tabIcon: {
-    width: 24,
-    height: 24,
-    borderRadius: 8,
-    backgroundColor: colors.line,
-  },
-  tabIconActive: { backgroundColor: colors.accent },
   tabLabel: { fontFamily: fonts.bold, fontSize: 12, color: colors.ink3 },
   tabLabelActive: { color: colors.accent },
 });

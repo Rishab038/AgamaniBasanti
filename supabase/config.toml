@@ -12,3 +12,7 @@ verify_jwt = false
 # public by design: gated by the shop joining code + owner approval
 [functions.self-register]
 verify_jwt = false
+
+# called by pg_cron, authenticated with the shared secret header
+[functions.send-push]
+verify_jwt = false

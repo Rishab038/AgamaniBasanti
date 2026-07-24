@@ -21,13 +21,14 @@ type StaffRow = {
   joined_on: string | null;
   branch_id: string;
   shift_id: string | null;
-  employment_type: "NO_PAY_NO_WORK" | "CONTRACT" | "PF" | null;
+  employment_type: "NORMAL" | "NO_PAY_NO_WORK" | "CONTRACT" | "PF" | null;
   shift_start: string | null;
   shift_end: string | null;
   lunch_minutes: number;
 };
 
 const EMPLOYMENT_LABEL: Record<string, string> = {
+  NORMAL: "Normal",
   NO_PAY_NO_WORK: "No pay no work",
   CONTRACT: "Contract",
   PF: "PF",
@@ -879,9 +880,10 @@ export default function Staff() {
                               setEditForm({ ...editForm, employment_type: e.target.value })}
                           >
                             <option value="">— not set —</option>
-                            <option value="NO_PAY_NO_WORK">No pay no work</option>
-                            <option value="CONTRACT">Contract</option>
-                            <option value="PF">PF</option>
+                            <option value="NORMAL">Normal — salary ÷ 30, 4 leave days</option>
+                            <option value="NO_PAY_NO_WORK">No pay no work — daily wage</option>
+                            <option value="CONTRACT">Contract — salary ÷ 30, 4 leave days</option>
+                            <option value="PF">PF — salary ÷ 30, 4 leave days</option>
                           </select>
                         </label>
                         <label>

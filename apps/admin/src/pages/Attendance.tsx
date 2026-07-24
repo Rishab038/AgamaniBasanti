@@ -83,6 +83,23 @@ export default function Attendance() {
   const [error, setError] = useState<string | null>(null);
   const { branchId } = useBranch();
 
+  // per-staff totals for the chosen period. A day counts as present if
+  // anyone punched for it — however it was verified, and whatever the
+  // owner later decided — except when the ruling was NO_PAY.
+  const summary = (() => {
+    const PRESENT = ["VERIFIED", "APP_ONLY", "DEVICE_ONLY", "HALF_DAY", "OVERTIME"];
+    const byStaff = new Map<string, { id: string; name: string; present: number; absent: number }>();
+    for (const r of rows) {
+      const id = r.profile_id;
+      const name = r.profiles?.full_name ?? "Unknown";
+      if (!byStaff.has(id)) byStaff.set(id, { id, name, present: 0, absent: 0 });
+      const acc = byStaff.get(id)!;
+      if (r.status === "ABSENT" || r.decision === "NO_PAY") acc.absent += 1;
+      else if (PRESENT.includes(r.status)) acc.present += 1;
+    }
+    return [...byStaff.values()].sort((a, b) => a.name.localeCompare(b.name));
+  })();
+
   const load = useCallback(async () => {
     let q = supabase
       .from("attendance_days")
@@ -159,7 +176,11 @@ export default function Attendance() {
     <div>
       <div className="page-head">
         <h1>Attendance</h1>
-        <p>Full history — approve or reject days that only have single verification.</p>
+        <p>
+          {workerId
+            ? "Day by day — decide any day that needs your ruling."
+            : "Days present and absent for each person. Click a name to see their days."}
+        </p>
       </div>
       {error && <div className="banner error" onClick={() => setError(null)}>{error}</div>}
 
@@ -177,7 +198,7 @@ export default function Attendance() {
           <select value={workerId} onChange={(e) => setWorkerId(e.target.value)}>
             <option value="">Everyone</option>
             {workers.map((w) => (
-              <option key={w.id} value={w.id}>{w.employee_code} — {w.full_name}</option>
+              <option key={w.id} value={w.id}>{w.full_name}</option>
             ))}
           </select>
         </label>
@@ -194,11 +215,56 @@ export default function Attendance() {
         </button>
       </div>
 
+      {/* Everyone's totals for the chosen period, at a glance — the
+          day-by-day table below answers "what happened on the 14th",
+          this answers "how is each person doing overall". */}
+      {/* Everyone = totals only. Thirty-six people times a month of rows
+          was a thousand-line list nobody reads; the day-by-day detail
+          appears once you pick a person. Click a card to do that. */}
+      {!workerId && summary.length > 0 && (
+        <table>
+          <thead>
+            <tr>
+              <th>Staff</th>
+              <th className="num">Present</th>
+              <th className="num">Absent</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {summary.map((s) => (
+              <tr key={s.id} className="clickable" onClick={() => setWorkerId(s.id)}>
+                <td>{s.name}</td>
+                <td className="num strong">{s.present}</td>
+                <td className={`num${s.absent > 0 ? " bad" : " muted"}`}>{s.absent}</td>
+                <td className="num">
+                  <span className="row-go">View days →</span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {!workerId && summary.length === 0 && (
+        <div className="card muted">No attendance in this period.</div>
+      )}
+
+      {workerId && (
+        <div className="detail-head">
+          <button className="btn small" onClick={() => setWorkerId("")}>← All staff</button>
+          <strong>{workers.find((w) => w.id === workerId)?.full_name ?? ""}</strong>
+          <span className="muted">
+            {summary[0]?.present ?? 0} present · {summary[0]?.absent ?? 0} absent
+          </span>
+        </div>
+      )}
+
+      {workerId && (
       <table>
         <thead>
           <tr>
             <th>Date</th>
-            <th>Staff</th>
             <th>Status</th>
             <th>In</th>
             <th>Out</th>
@@ -208,12 +274,11 @@ export default function Attendance() {
         </thead>
         <tbody>
           {rows.length === 0 && (
-            <tr><td colSpan={7} className="muted">Nothing in this period.</td></tr>
+            <tr><td colSpan={6} className="muted">Nothing in this period.</td></tr>
           )}
           {rows.map((r) => (
             <tr key={r.id}>
               <td>{r.work_date}</td>
-              <td>{r.profiles?.employee_code} — {r.profiles?.full_name}</td>
               <td>
                 {/* the owner's ruling outranks the raw evidence — a day
                     they marked Normal should not keep saying "App only" */}
@@ -287,6 +352,7 @@ export default function Attendance() {
           ))}
         </tbody>
       </table>
+      )}
     </div>
   );
 }

@@ -725,6 +725,32 @@ td { font-size: 13.5px; font-weight: 400; color: var(--ink); }
    One choice among four. Options are a list with their pay effect
    spelled out, so nothing relies on colour alone and Cancel is
    visibly not one of the choices. */
+/* ---------- per-staff attendance summary ---------- */
+
+/* ---------- attendance summary list ----------
+   A row per person beats a grid of boxes: names left-aligned in one
+   column scan far faster than a wrapping grid, and the numbers line up
+   so you can compare straight down the column. */
+.num { text-align: right; }
+td.strong { font-weight: 500; }
+td.bad { color: var(--rose); font-weight: 500; }
+tr.clickable { cursor: pointer; }
+.row-go {
+  color: var(--accent);
+  font-size: 12.5px;
+  opacity: 0;
+  transition: opacity 120ms var(--ease);
+}
+tr.clickable:hover .row-go { opacity: 1; }
+
+.detail-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 0 8px;
+  font-size: 15px;
+}
+
 .decide-sheet {
   display: flex;
   flex-direction: column;
