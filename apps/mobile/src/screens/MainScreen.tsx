@@ -135,6 +135,37 @@ export default function MainScreen({
     registerForPush(profile.id);
   }, [profile.id]);
 
+  // Live updates while the app is open. Without this the app only
+  // refreshed when brought back to the foreground, so a change made
+  // while the worker was watching the screen — an advance approved, a
+  // day finalized, a notification sent — didn't appear until they
+  // relaunched. One channel, scoped by RLS to this worker's own rows,
+  // covers every table the tabs read; a short debounce collapses a
+  // burst of related changes into a single reload.
+  useEffect(() => {
+    const filter = `profile_id=eq.${profile.id}`;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const bump = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        reload();
+      }, 400);
+    };
+
+    const channel = supabase
+      .channel(`worker:${profile.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "attendance_app", filter }, bump)
+      .on("postgres_changes", { event: "*", schema: "public", table: "attendance_days", filter }, bump)
+      .on("postgres_changes", { event: "*", schema: "public", table: "advances", filter }, bump)
+      .on("postgres_changes", { event: "*", schema: "public", table: "notifications", filter }, bump)
+      .subscribe();
+
+    return () => {
+      if (timer) clearTimeout(timer);
+      supabase.removeChannel(channel);
+    };
+  }, [profile.id, reload]);
+
   // Android suspends the JS engine while the app is backgrounded (this
   // is correct — an attendance app should not run in the background).
   // The bug was that nothing refreshed on the way back: reopening from
