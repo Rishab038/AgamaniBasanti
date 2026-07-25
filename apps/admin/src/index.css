@@ -379,6 +379,36 @@ input:focus, select:focus {
   flex-wrap: wrap;
 }
 .filter-row label, .holiday-row label { align-self: stretch; justify-content: flex-end; }
+
+/* A page toolbar with a left group (what you change), a middle group
+   (what you do) and a right group (what things are). Grouping them
+   apart stops the controls reading as one undifferentiated row. */
+.toolbar {
+  display: flex;
+  align-items: end;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.toolbar-actions, .toolbar-end {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.toolbar-end {
+  margin-left: auto;          /* pushes state + export to the right edge */
+  gap: 14px;
+}
+.toolbar-month { gap: 6px; }
+.toolbar input, .toolbar select, .toolbar .btn { height: 34px; }
+/* the status pill is a label, not a control — let it sit at control height
+   without stretching, and keep it from wrapping mid-phrase */
+.toolbar-end .pill { white-space: nowrap; }
+@media (max-width: 720px) {
+  /* on a phone the right group would be squeezed against the actions;
+     let it start its own line instead */
+  .toolbar-end { margin-left: 0; width: 100%; justify-content: space-between; }
+}
+
 .filter-row input, .filter-row select,
 .holiday-row input, .holiday-row select,
 .filter-row .btn, .holiday-row .btn { height: 34px; }

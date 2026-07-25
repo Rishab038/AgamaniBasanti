@@ -316,7 +316,11 @@ export default function HomeTab({
                 {stage?.label}
               </Text>
               <Text style={[styles.bigButtonSub, !enabled && styles.textDisabled]}>
-                {enabled ? stage?.hint : "Come closer to the shop"}
+                {enabled
+                  ? stage?.hint
+                  : locGranted === false
+                    ? "Allow location first"
+                    : "Come closer to the shop"}
               </Text>
             </Pressable>
           </Animated.View>
@@ -515,6 +519,9 @@ const styles = StyleSheet.create({
     fontSize: 13, padding: 18,
   },
 
+  // (camera styles removed with the selfie step — fingerprint machine
+  // is the second factor now)
+
   successWrap: {
     position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
     alignItems: "center", justifyContent: "center",
@@ -535,29 +542,4 @@ const styles = StyleSheet.create({
     marginTop: 4, textAlign: "center",
   },
 
-  cameraContainer: { flex: 1, backgroundColor: "#241d18" },
-  cameraTop: { paddingTop: 58, paddingBottom: 14, alignItems: "center" },
-  cameraTitle: { fontFamily: fonts.extra, color: "#fff", fontSize: 16.5 },
-  cameraHint: { fontFamily: fonts.semi, color: "rgba(255,255,255,0.7)", fontSize: 13, marginTop: 3 },
-  cameraFrame: { flex: 1, marginHorizontal: 16, borderRadius: 22, overflow: "hidden" },
-  camera: { flex: 1 },
-  faceGuide: {
-    position: "absolute", top: "13%", alignSelf: "center",
-    width: 235, height: 295, borderRadius: 150,
-    borderWidth: 2.5, borderColor: "rgba(255,255,255,0.6)", borderStyle: "dashed",
-  },
-  cameraControls: {
-    flexDirection: "row", justifyContent: "space-between",
-    alignItems: "center", padding: 22,
-  },
-  cancelButton: { width: 76 },
-  cancelText: { fontFamily: fonts.bold, color: "rgba(255,255,255,0.8)", fontSize: 15 },
-  shutter: {
-    width: 74, height: 74, borderRadius: 37, backgroundColor: "#fff",
-    alignItems: "center", justifyContent: "center",
-  },
-  shutterInner: {
-    width: 58, height: 58, borderRadius: 29,
-    borderWidth: 4, borderColor: colors.accent,
-  },
 });

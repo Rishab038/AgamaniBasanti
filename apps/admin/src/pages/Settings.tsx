@@ -16,16 +16,6 @@ type Branch = {
   join_code: string | null;
 };
 
-type Shift = {
-  id: string;
-  branch_id: string;
-  name: string;
-  start_time: string;
-  end_time: string;
-  grace_minutes: number;
-  week_off: number[];
-};
-
 type Holiday = { id: string; branch_id: string; on_date: string; name: string };
 
 type Device = {
@@ -36,11 +26,8 @@ type Device = {
   branch_id: string;
 };
 
-const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
 export default function Settings() {
   const [branches, setBranches] = useState<Branch[]>([]);
-  const [shifts, setShifts] = useState<Shift[]>([]);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -54,9 +41,8 @@ export default function Settings() {
   const [attempts, setAttempts] = useState<{ serial: string; last_seen: string; hits: number }[]>([]);
 
   const load = async () => {
-    const [b, s, h, d, at] = await Promise.all([
+    const [b, h, d, at] = await Promise.all([
       supabase.from("branches").select("*").order("created_at"),
-      supabase.from("shifts").select("*").order("start_time"),
       supabase.from("holidays").select("*").gte("on_date", new Date().toISOString().slice(0, 10)).order("on_date"),
       // all shops' machines are listed together: seeing both at once is
       // how you spot one plugged into the wrong shop
@@ -65,7 +51,6 @@ export default function Settings() {
     ]);
     setAttempts(at.data ?? []);
     setBranches(b.data ?? []);
-    setShifts(s.data ?? []);
     setHolidays(h.data ?? []);
     setDevices(d.data ?? []);
   };
@@ -93,28 +78,6 @@ export default function Settings() {
 
   const editBranch = (id: string, patch: Partial<Branch>) =>
     setBranches(branches.map((b) => (b.id === id ? { ...b, ...patch } : b)));
-
-  const saveShift = async (s: Shift) => {
-    const { error: err } = await supabase.from("shifts").update({
-      name: s.name,
-      start_time: s.start_time,
-      end_time: s.end_time,
-      grace_minutes: s.grace_minutes,
-      week_off: s.week_off,
-    }).eq("id", s.id);
-    if (err) setError(err.message);
-    else flash(`Shift "${s.name}" saved.`);
-  };
-
-  const editShift = (id: string, patch: Partial<Shift>) =>
-    setShifts(shifts.map((s) => (s.id === id ? { ...s, ...patch } : s)));
-
-  const toggleWeekOff = (s: Shift, day: number) => {
-    const week_off = s.week_off.includes(day)
-      ? s.week_off.filter((d) => d !== day)
-      : [...s.week_off, day].sort();
-    editShift(s.id, { week_off });
-  };
 
   const addHoliday = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -188,44 +151,14 @@ export default function Settings() {
         latitude and longitude.
       </p>
 
-      <h2>Shifts</h2>
-      {shifts.map((s) => (
-        <div className="card form-grid" key={s.id}>
-          <label>
-            Shift name
-            <input value={s.name} onChange={(e) => editShift(s.id, { name: e.target.value })} />
-          </label>
-          <label>
-            Starts
-            <input type="time" value={s.start_time.slice(0, 5)}
-              onChange={(e) => editShift(s.id, { start_time: e.target.value })} />
-          </label>
-          <label>
-            Ends
-            <input type="time" value={s.end_time.slice(0, 5)}
-              onChange={(e) => editShift(s.id, { end_time: e.target.value })} />
-          </label>
-          <label>
-            Late after (minutes)
-            <input type="text" inputMode="numeric" value={s.grace_minutes}
-              onChange={intFieldHandler((n) => editShift(s.id, { grace_minutes: n }), 3)} />
-          </label>
-          <div className="weekoff">
-            <span>Weekly off:</span>
-            {DAYS.map((d, i) => (
-              <label key={d} className="weekday">
-                <input
-                  type="checkbox"
-                  checked={s.week_off.includes(i)}
-                  onChange={() => toggleWeekOff(s, i)}
-                />
-                {d}
-              </label>
-            ))}
-          </div>
-          <button className="btn primary" onClick={() => saveShift(s)}>Save shift</button>
-        </div>
-      ))}
+      <h2>Shift timings</h2>
+      <div className="card">
+        <span className="muted">
+          Shift timings are set per person — open the <strong>Staff</strong> page, pick
+          someone, and set their start, end, and lunch break there. Staff with timings get
+          automatic reminders; staff without timings are never marked late.
+        </span>
+      </div>
 
       <h2>Joining codes</h2>
       <div className="card">

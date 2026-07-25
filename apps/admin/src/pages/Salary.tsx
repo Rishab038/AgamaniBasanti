@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useBranch } from "../lib/branch";
+import { titleCase } from "../lib/text";
 
 type Run = { id: string; status: "DRAFT" | "CONFIRMED"; confirmed_at: string | null };
 
@@ -30,6 +31,7 @@ export default function Salary() {
   const [run, setRun] = useState<Run | null>(null);
   const [slips, setSlips] = useState<Payslip[]>([]);
   const [unresolved, setUnresolved] = useState(0);
+  const [payGaps, setPayGaps] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -73,6 +75,26 @@ export default function Salary() {
       .is("decision", null)
       .not("review_reasons", "eq", "{}");
     setUnresolved(count ?? 0);
+
+    // Staff whose pay inputs are missing come out of the engine as ₹0 —
+    // silently. Warn before the owner generates or confirms anything:
+    // PF staff need the component breakdown (Basic/HRA/…), everyone
+    // else needs a base salary.
+    const { data: staff } = await supabase
+      .from("profiles")
+      .select("full_name, employment_type, base_salary, salary_basic")
+      .eq("branch_id", bid)
+      .eq("role", "worker")
+      .eq("active", true);
+    setPayGaps(
+      (staff ?? [])
+        .filter((p) =>
+          p.employment_type === "PF"
+            ? !Number(p.salary_basic)
+            : !Number(p.base_salary),
+        )
+        .map((p) => titleCase(p.full_name)),
+    );
   }, [branchId, monthDate]);
 
   useEffect(() => {
@@ -150,39 +172,58 @@ export default function Salary() {
       {error && <div className="banner error" onClick={() => setError(null)}>{error}</div>}
       {notice && <div className="banner info" onClick={() => setNotice(null)}>{notice}</div>}
 
-      <div className="card filter-row">
-        <label>
+      {/* Month and the actions that change the run sit together on the
+          left; the run's state and the export — which read rather than
+          act — sit on the right, so the eye lands on one group at a time. */}
+      <div className="card toolbar">
+        <label className="toolbar-month">
           Month
           <input type="month" value={month} max={thisMonth()} onChange={(e) => setMonth(e.target.value)} />
         </label>
-        {run?.status !== "CONFIRMED" && (
-          <button className="btn primary" onClick={generate} disabled={busy}>
-            {busy ? "Working…" : run ? "Regenerate draft" : "Generate draft"}
-          </button>
-        )}
-        {run?.status === "DRAFT" && slips.length > 0 && (
-          confirming ? (
-            <>
-              <button className="btn good" onClick={confirm} disabled={busy}>
-                Yes, freeze this month
-              </button>
-              <button className="btn" onClick={() => setConfirming(false)}>Cancel</button>
-            </>
-          ) : (
-            <button className="btn good" onClick={() => setConfirming(true)} disabled={busy}>
-              Confirm & freeze
+
+        <div className="toolbar-actions">
+          {run?.status !== "CONFIRMED" && (
+            <button className="btn primary" onClick={generate} disabled={busy}>
+              {busy ? "Working…" : run ? "Regenerate draft" : "Generate draft"}
             </button>
-          )
-        )}
-        {run && (
-          <span className={`pill ${run.status === "CONFIRMED" ? "good" : "warn"}`}>
-            {run.status === "CONFIRMED" ? "Confirmed ✓" : "Draft — not final"}
-          </span>
-        )}
-        <button className="btn" onClick={exportCsv} disabled={slips.length === 0}>
-          ⬇ Export CSV
-        </button>
+          )}
+          {run?.status === "DRAFT" && slips.length > 0 && (
+            confirming ? (
+              <>
+                <button className="btn good" onClick={confirm} disabled={busy}>
+                  Yes, freeze this month
+                </button>
+                <button className="btn" onClick={() => setConfirming(false)}>Cancel</button>
+              </>
+            ) : (
+              <button className="btn good" onClick={() => setConfirming(true)} disabled={busy}>
+                Confirm &amp; freeze
+              </button>
+            )
+          )}
+        </div>
+
+        <div className="toolbar-end">
+          <button className="btn" onClick={exportCsv} disabled={slips.length === 0}>
+            ⬇ Export CSV
+          </button>
+          {run && (
+            <span className={`pill ${run.status === "CONFIRMED" ? "good" : "warn"}`}>
+              {run.status === "CONFIRMED" ? "Confirmed" : "Draft — not final"}
+            </span>
+          )}
+        </div>
       </div>
+
+      {payGaps.length > 0 && run?.status !== "CONFIRMED" && (
+        <div className="banner warn">
+          {payGaps.length} staff {payGaps.length > 1 ? "have" : "has"} no salary set up —
+          their pay will come out as <strong>₹0</strong>:{" "}
+          {payGaps.slice(0, 5).join(", ")}
+          {payGaps.length > 5 ? ` and ${payGaps.length - 5} more` : ""}. For PF staff fill in
+          the salary breakup (Basic, HRA…), for others the monthly salary — on the Staff page.
+        </div>
+      )}
 
       {unresolved > 0 && run?.status !== "CONFIRMED" && (
         <div className="banner warn">
@@ -218,8 +259,7 @@ export default function Salary() {
             {slips.map((s) => (
               <tr key={s.id}>
                 <td>
-                  <strong>{s.profiles?.full_name}</strong>{" "}
-                  <span className="muted">({s.profiles?.employee_code})</span>
+                  <strong>{titleCase(s.profiles?.full_name ?? "")}</strong>
                   {Number(s.data.single_verified_days ?? 0) > 0 && (
                     <div className="note muted">
                       incl. {s.data.single_verified_days} single-verified day(s)

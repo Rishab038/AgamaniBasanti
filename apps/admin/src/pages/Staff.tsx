@@ -6,6 +6,7 @@ import { Fragment, useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useBranch } from "../lib/branch";
 import { intFieldHandler } from "../lib/intField";
+import { byName, titleCase } from "../lib/text";
 
 type StaffRow = {
   id: string;
@@ -80,6 +81,13 @@ const emptyForm = {
   branch_id: "",
   shift_id: "",
   joined_on: new Date().toISOString().slice(0, 10),
+  employment_type: "NORMAL",
+  shift_start: "",
+  shift_end: "",
+  salary_basic: 0,
+  salary_hra: 0,
+  salary_conveyance: 0,
+  salary_washing: 0,
 };
 
 export default function Staff() {
@@ -95,9 +103,16 @@ export default function Staff() {
     if (!branchId) return;
     const { data } = await supabase
       .from("profiles").select("*")
-      .eq("branch_id", branchId)
-      .order("employee_code");
-    setStaff((data as StaffRow[]) ?? []);
+      .eq("branch_id", branchId);
+    // Managers first (there are only one or two, and they are "you"),
+    // then every worker in alphabetical order — the owner looks people
+    // up by name, never by code.
+    const rows = ((data as StaffRow[]) ?? []).slice().sort((a, b) => {
+      const aWorker = a.role === "worker" ? 1 : 0;
+      const bWorker = b.role === "worker" ? 1 : 0;
+      return aWorker - bWorker || byName(a, b);
+    });
+    setStaff(rows);
   };
 
   useEffect(() => {
@@ -199,18 +214,30 @@ export default function Staff() {
     URL.revokeObjectURL(a.href);
   };
 
+  const pfTotal =
+    form.salary_basic + form.salary_hra + form.salary_conveyance + form.salary_washing;
+
   const addWorker = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
     setError(null);
     try {
+      const isPf = form.employment_type === "PF";
       const res = await callStaffAdmin({
         action: "create_worker",
         employee_code: form.employee_code || null,
         full_name: form.full_name,
         pin: form.pin,
         phone: form.phone,
-        base_salary: Number(form.base_salary) || 0,
+        employment_type: form.employment_type,
+        // for PF staff the components are the salary; base_salary is their sum
+        base_salary: isPf ? pfTotal : Number(form.base_salary) || 0,
+        salary_basic: form.salary_basic,
+        salary_hra: form.salary_hra,
+        salary_conveyance: form.salary_conveyance,
+        salary_washing: form.salary_washing,
+        shift_start: form.shift_start || null,
+        shift_end: form.shift_end || null,
         branch_id: branchId,
         joined_on: form.joined_on,
       });
@@ -645,12 +672,59 @@ export default function Staff() {
             <input value={form.pin} onChange={set("pin")} placeholder="e.g. 428913" maxLength={6} required />
           </label>
           <label>
-            Staff code (optional — auto if empty)
-            <input value={form.employee_code} onChange={set("employee_code")} placeholder="W02" />
+            Staff type
+            <select value={form.employment_type} onChange={set("employment_type")}>
+              <option value="NORMAL">Normal (monthly salary)</option>
+              <option value="PF">PF (statutory — with salary break-up)</option>
+              <option value="CONTRACT">Contract</option>
+              <option value="NO_PAY_NO_WORK">No pay no work (daily wage)</option>
+            </select>
+          </label>
+
+          {/* PF staff are paid off the components, so the single "monthly
+              salary" box would be the wrong question to ask. Swap it for
+              the break-up and total the parts up for them. */}
+          {form.employment_type === "PF" ? (
+            <>
+              <label>
+                Basic (₹)
+                <input type="text" inputMode="numeric" value={form.salary_basic}
+                  onChange={intFieldHandler((n) => setForm((f) => ({ ...f, salary_basic: n })), 7)} />
+              </label>
+              <label>
+                H.R.A. (₹)
+                <input type="text" inputMode="numeric" value={form.salary_hra}
+                  onChange={intFieldHandler((n) => setForm((f) => ({ ...f, salary_hra: n })), 7)} />
+              </label>
+              <label>
+                Conveyance (₹)
+                <input type="text" inputMode="numeric" value={form.salary_conveyance}
+                  onChange={intFieldHandler((n) => setForm((f) => ({ ...f, salary_conveyance: n })), 7)} />
+              </label>
+              <label>
+                Washing (₹)
+                <input type="text" inputMode="numeric" value={form.salary_washing}
+                  onChange={intFieldHandler((n) => setForm((f) => ({ ...f, salary_washing: n })), 7)} />
+              </label>
+              <div className="pf-total" style={{ gridColumn: "1 / -1" }}>
+                Total salary: ₹{pfTotal.toLocaleString("en-IN")}
+                {" · "}PF is 12% of Basic, ESI 0.75% of gross, plus professional tax.
+              </div>
+            </>
+          ) : (
+            <label>
+              {form.employment_type === "NO_PAY_NO_WORK" ? "Daily wage (₹)" : "Monthly salary (₹)"}
+              <input type="number" value={form.base_salary} onChange={set("base_salary")} placeholder="12000" />
+            </label>
+          )}
+
+          <label>
+            Shift starts (optional)
+            <input type="time" value={form.shift_start} onChange={set("shift_start")} />
           </label>
           <label>
-            Monthly salary (₹)
-            <input type="number" value={form.base_salary} onChange={set("base_salary")} placeholder="12000" />
+            Shift ends (optional)
+            <input type="time" value={form.shift_end} onChange={set("shift_end")} />
           </label>
           <label>
             Joining date
@@ -668,7 +742,6 @@ export default function Staff() {
       <table>
         <thead>
           <tr>
-            <th>Code</th>
             <th>Name</th>
             <th>Type</th>
             <th>Salary</th>
@@ -681,9 +754,8 @@ export default function Staff() {
           {staff.filter((s) => s.active || s.approved_at).map((row) => (
             <Fragment key={row.id}>
             <tr className={row.active ? "" : "inactive"}>
-              <td>{row.employee_code}</td>
               <td>
-                {row.full_name}{!row.active && " (inactive)"}
+                {titleCase(row.full_name)}{!row.active && " (inactive)"}
                 {(row.phone || row.shift_start) && (
                   <div className="note muted">
                     {row.phone}
@@ -853,7 +925,7 @@ export default function Staff() {
 
             {editingId === row.id && (
               <tr>
-                <td colSpan={7} className="edit-cell">
+                <td colSpan={6} className="edit-cell">
                   <div className="edit-panel">
                     <label>
                       Full name
@@ -906,14 +978,6 @@ export default function Staff() {
                         </div>
                       </>
                     )}
-                    <label>
-                      Staff code
-                      <input
-                        value={editForm.employee_code}
-                        onChange={(e) =>
-                          setEditForm({ ...editForm, employee_code: e.target.value.toUpperCase() })}
-                      />
-                    </label>
                     <label>
                       Joining date
                       <input

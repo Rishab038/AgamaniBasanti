@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { WifiOff } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useBranch } from "../lib/branch";
+import { titleCase } from "../lib/text";
 
 type DayRow = {
   id: string;
@@ -264,7 +265,7 @@ export default function Dashboard() {
                 : null;
             return (
               <tr key={r.id}>
-                <td><strong>{r.profiles?.full_name}</strong></td>
+                <td><strong>{titleCase(r.profiles?.full_name ?? "")}</strong></td>
                 <td>{appTime ?? <span className="missing">— missing</span>}</td>
                 <td>{devTime ?? <span className="missing">— missing</span>}</td>
                 <td>{statusPill(r)}</td>
@@ -278,7 +279,7 @@ export default function Dashboard() {
         <div className="approval-card" key={a.id}>
           <div>
             <div className="who">
-              {a.profiles?.full_name} asked for {rupees(a.amount)} advance
+              {titleCase(a.profiles?.full_name ?? "")} asked for {rupees(a.amount)} advance
             </div>
             <div className="why">
               {a.reason ? `${a.reason} · ` : ""}

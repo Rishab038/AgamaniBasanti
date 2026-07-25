@@ -1,6 +1,6 @@
 // The app shell: three tabs (Home · Attendance · Money) and the
 // shared data every tab needs — this month's attendance, today's
-// punches, advances, and the worker's shift.
+// punches, and advances.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -28,8 +28,6 @@ export type AdvanceRecord = {
   status: "PENDING" | "APPROVED" | "REJECTED";
   created_at: string;
 };
-export type ShiftInfo = { name: string; start_time: string; end_time: string } | null;
-
 export type SharedData = {
   monthDays: DayRecord[];
   todayPunches: PunchRecord[];
@@ -37,7 +35,6 @@ export type SharedData = {
   /** total advance money actually handed to this worker (approved requests) */
   advancePaid: number;
   lateSyncDates: Set<string>;
-  shift: ShiftInfo;
   pending: number;
   reload: () => Promise<void>;
 };
@@ -65,7 +62,6 @@ export default function MainScreen({
   const [advances, setAdvances] = useState<AdvanceRecord[]>([]);
   const [advancePaid, setAdvancePaid] = useState(0);
   const [lateSyncDates, setLateSyncDates] = useState<Set<string>>(new Set());
-  const [shift, setShift] = useState<ShiftInfo>(null);
   const [pending, setPending] = useState(0);
 
   const reload = useCallback(async () => {
@@ -198,19 +194,8 @@ export default function MainScreen({
     return () => sub.remove();
   }, [reload]);
 
-  useEffect(() => {
-    if (!shift && profile.shift_id) {
-      supabase
-        .from("shifts")
-        .select("name, start_time, end_time")
-        .eq("id", profile.shift_id)
-        .single()
-        .then(({ data }) => setShift(data));
-    }
-  }, [profile.shift_id, shift]);
-
   const shared: SharedData = {
-    monthDays, todayPunches, advances, advancePaid, lateSyncDates, shift, pending, reload,
+    monthDays, todayPunches, advances, advancePaid, lateSyncDates, pending, reload,
   };
 
   return (

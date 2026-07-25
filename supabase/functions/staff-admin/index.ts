@@ -10,7 +10,10 @@
 //
 // Actions (POST JSON { action, ...params }):
 //   create_worker { full_name, phone, pin, branch_id,
-//                   employee_code?, shift_id?, base_salary?, joined_on?, role? }
+//                   employee_code?, shift_id?, base_salary?, joined_on?, role?,
+//                   employment_type?, shift_start?, shift_end?,
+//                   salary_basic?, salary_hra?, salary_conveyance?,
+//                   salary_washing?  -- PF components; base_salary is their sum }
 //   create_admin  { email, password, full_name, role: owner|supervisor }
 //                 -- managers sign in to the dashboard with a real email
 //                    address, unlike workers who use phone + PIN
@@ -101,6 +104,28 @@ async function createOneWorker(input: Record<string, unknown>): Promise<CreateRe
   }
 
   const enroll = Number(input.device_enroll_no);
+
+  // PF staff are paid off the statutory components, not a single figure:
+  // PF is 12% of Basic and ESI 0.75% of gross, so the split has to be
+  // stored, and base_salary is their sum. For everyone else the
+  // components stay zero and base_salary is the monthly figure.
+  const num = (v: unknown) => {
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  };
+  const TYPES = ["NORMAL", "CONTRACT", "PF", "NO_PAY_NO_WORK"];
+  const rawType = String(input.employment_type ?? "").toUpperCase();
+  const employmentType = TYPES.includes(rawType) ? rawType : null;
+  const isPf = employmentType === "PF";
+  const parts = {
+    salary_basic: isPf ? num(input.salary_basic) : 0,
+    salary_hra: isPf ? num(input.salary_hra) : 0,
+    salary_conveyance: isPf ? num(input.salary_conveyance) : 0,
+    salary_washing: isPf ? num(input.salary_washing) : 0,
+  };
+  const componentTotal =
+    parts.salary_basic + parts.salary_hra + parts.salary_conveyance + parts.salary_washing;
+
   const { error: profErr } = await admin.from("profiles").insert({
     id: created.user.id,
     employee_code: code,
@@ -109,9 +134,13 @@ async function createOneWorker(input: Record<string, unknown>): Promise<CreateRe
     branch_id: input.branch_id,
     shift_id: input.shift_id ?? null,
     phone,
-    base_salary: input.base_salary ?? 0,
+    employment_type: employmentType,
+    ...parts,
+    base_salary: isPf ? componentTotal : num(input.base_salary),
     joined_on: input.joined_on ?? null,
     device_enroll_no: Number.isInteger(enroll) && enroll > 0 ? enroll : null,
+    shift_start: input.shift_start || null,
+    shift_end: input.shift_end || null,
   });
   if (profErr) {
     await admin.auth.admin.deleteUser(created.user.id); // roll back orphaned login

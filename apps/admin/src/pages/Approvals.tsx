@@ -5,6 +5,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useBranch } from "../lib/branch";
+import { titleCase } from "../lib/text";
 
 type Advance = {
   id: string;
@@ -91,7 +92,7 @@ export default function Approvals() {
         <div className="approval-card" key={a.id}>
           <div>
             <div className="who">
-              {a.profiles?.full_name} asked for {rupees(a.amount)}
+              {titleCase(a.profiles?.full_name ?? "")} asked for {rupees(a.amount)}
               <span className="muted"> · {fmtDate(a.created_at)}</span>
             </div>
             <div className="why">
@@ -142,8 +143,7 @@ export default function Approvals() {
               {decided.map((a) => (
                 <tr key={a.id}>
                   <td>
-                    <strong>{a.profiles?.full_name}</strong>{" "}
-                    <span className="muted">({a.profiles?.employee_code})</span>
+                    <strong>{titleCase(a.profiles?.full_name ?? "")}</strong>
                   </td>
                   <td>{rupees(a.amount)}</td>
                   <td className="muted">{a.reason ?? "—"}</td>

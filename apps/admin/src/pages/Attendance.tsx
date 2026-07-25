@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useBranch } from "../lib/branch";
+import { byName, titleCase } from "../lib/text";
 
 type Row = {
   id: string;
@@ -123,8 +124,10 @@ export default function Attendance() {
     if (!branchId) return;
     supabase
       .from("profiles").select("id, full_name, employee_code")
-      .eq("role", "worker").eq("branch_id", branchId).order("employee_code")
-      .then(({ data }) => setWorkers(data ?? []));
+      .eq("role", "worker").eq("branch_id", branchId)
+      // alphabetical, sorted here so mixed-case names ("MANDIP" vs
+      // "Mithu") interleave properly rather than by ASCII
+      .then(({ data }) => setWorkers((data ?? []).slice().sort(byName)));
   }, [branchId]);
 
   useEffect(() => {
@@ -198,7 +201,7 @@ export default function Attendance() {
           <select value={workerId} onChange={(e) => setWorkerId(e.target.value)}>
             <option value="">Everyone</option>
             {workers.map((w) => (
-              <option key={w.id} value={w.id}>{w.full_name}</option>
+              <option key={w.id} value={w.id}>{titleCase(w.full_name)}</option>
             ))}
           </select>
         </label>
@@ -253,7 +256,7 @@ export default function Attendance() {
       {workerId && (
         <div className="detail-head">
           <button className="btn small" onClick={() => setWorkerId("")}>← All staff</button>
-          <strong>{workers.find((w) => w.id === workerId)?.full_name ?? ""}</strong>
+          <strong>{titleCase(workers.find((w) => w.id === workerId)?.full_name ?? "")}</strong>
           <span className="muted">
             {summary[0]?.present ?? 0} present · {summary[0]?.absent ?? 0} absent
           </span>
@@ -317,7 +320,7 @@ export default function Attendance() {
                 {pending === r.id && (
                   <div className="decide-sheet">
                     <div className="decide-head">
-                      <strong>{r.profiles?.full_name}</strong>
+                      <strong>{titleCase(r.profiles?.full_name ?? "")}</strong>
                       <span className="muted"> · {r.work_date}</span>
                       {(r.review_reasons ?? []).length > 0 && (
                         <div className="muted note">
