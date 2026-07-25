@@ -2,8 +2,9 @@
 // shared data every tab needs — this month's attendance, today's
 // punches, advances, and the worker's shift.
 
-import { useCallback, useEffect, useState } from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { AppState, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import * as Updates from "expo-updates";
 import { Ionicons } from "@expo/vector-icons";
 import { Branch, Profile, supabase } from "../lib/supabase";
 import { drain, pendingCount } from "../lib/queue";
@@ -133,6 +134,38 @@ export default function MainScreen({
   useEffect(() => {
     registerForPush(profile.id);
   }, [profile.id]);
+
+  // Android suspends the JS engine while the app is backgrounded (this
+  // is correct — an attendance app should not run in the background).
+  // The bug was that nothing refreshed on the way back: reopening from
+  // the recents list showed stale data until a full relaunch. Now every
+  // return to the foreground drains the offline queue, reloads, and
+  // quietly checks for a newer app version — no manual restart.
+  const lastForeground = useRef(Date.now());
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", async (state) => {
+      if (state !== "active") return;
+      const idleMs = Date.now() - lastForeground.current;
+      lastForeground.current = Date.now();
+
+      drain().then(reload);
+
+      // only look for an OTA update after a real gap, so quick app
+      // switches don't hammer the update server
+      if (idleMs > 60_000 && !__DEV__) {
+        try {
+          const res = await Updates.checkForUpdateAsync();
+          if (res.isAvailable) {
+            await Updates.fetchUpdateAsync();
+            await Updates.reloadAsync();
+          }
+        } catch {
+          // offline or no update — ignore
+        }
+      }
+    });
+    return () => sub.remove();
+  }, [reload]);
 
   useEffect(() => {
     if (!shift && profile.shift_id) {

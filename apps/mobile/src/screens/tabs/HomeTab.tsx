@@ -127,8 +127,11 @@ export default function HomeTab({
       const { status } = await Location.requestForegroundPermissionsAsync();
       setLocGranted(status === "granted");
       if (status !== "granted") return;
+      // Balanced accuracy (~100 m, wifi/cell assisted) every 12 s is
+      // plenty for a 100 m geofence and far lighter than High/5 s, which
+      // kept the GPS radio hot and made the whole app feel sluggish.
       sub = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.High, timeInterval: 5000, distanceInterval: 5 },
+        { accuracy: Location.Accuracy.Balanced, timeInterval: 12000, distanceInterval: 15 },
         (loc) => {
           setLocation(loc);
           setFence(

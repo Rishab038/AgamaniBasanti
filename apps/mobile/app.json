@@ -11,6 +11,7 @@
     },
     "android": {
       "package": "com.agamani.staff",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#ffffff",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -32,6 +33,12 @@
         "expo-location",
         {
           "locationWhenInUsePermission": "Attendance check-in only works when you are at the shop, so the app needs your location."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#d96f4e"
         }
       ],
       "expo-font"

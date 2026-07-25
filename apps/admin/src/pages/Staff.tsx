@@ -25,6 +25,10 @@ type StaffRow = {
   shift_start: string | null;
   shift_end: string | null;
   lunch_minutes: number;
+  salary_basic: number;
+  salary_hra: number;
+  salary_conveyance: number;
+  salary_washing: number;
 };
 
 const EMPLOYMENT_LABEL: Record<string, string> = {
@@ -338,6 +342,7 @@ export default function Staff() {
   const [editForm, setEditForm] = useState({
     full_name: "", base_salary: 0, joined_on: "", employee_code: "",
     employment_type: "", shift_start: "", shift_end: "", lunch_minutes: 60,
+    salary_basic: 0, salary_hra: 0, salary_conveyance: 0, salary_washing: 0,
   });
   const [editBusy, setEditBusy] = useState(false);
 
@@ -354,6 +359,10 @@ export default function Staff() {
       shift_start: hhmm(row.shift_start),
       shift_end: hhmm(row.shift_end),
       lunch_minutes: row.lunch_minutes ?? 60,
+      salary_basic: Number(row.salary_basic) || 0,
+      salary_hra: Number(row.salary_hra) || 0,
+      salary_conveyance: Number(row.salary_conveyance) || 0,
+      salary_washing: Number(row.salary_washing) || 0,
     });
   };
 
@@ -365,15 +374,27 @@ export default function Staff() {
     setEditBusy(true);
     setError(null);
     // owner-only by RLS; the audit trigger records every salary change
+    // for PF staff the components are the source of truth and
+    // base_salary is kept equal to their sum, so summaries and the
+    // other pay bases still have one number to read
+    const isPf = editForm.employment_type === "PF";
+    const componentSum =
+      editForm.salary_basic + editForm.salary_hra +
+      editForm.salary_conveyance + editForm.salary_washing;
+
     const { error: err } = await supabase.from("profiles").update({
       full_name: editForm.full_name.trim(),
-      base_salary: editForm.base_salary,
+      base_salary: isPf ? componentSum : editForm.base_salary,
       joined_on: editForm.joined_on || null,
       employee_code: editForm.employee_code.trim().toUpperCase(),
       employment_type: editForm.employment_type || null,
       shift_start: editForm.shift_start || null,
       shift_end: editForm.shift_end || null,
       lunch_minutes: editForm.lunch_minutes,
+      salary_basic: isPf ? editForm.salary_basic : 0,
+      salary_hra: isPf ? editForm.salary_hra : 0,
+      salary_conveyance: isPf ? editForm.salary_conveyance : 0,
+      salary_washing: isPf ? editForm.salary_washing : 0,
       updated_at: new Date().toISOString(),
     }).eq("id", row.id);
     setEditBusy(false);
@@ -841,9 +862,11 @@ export default function Staff() {
                         onChange={(e) => setEditForm({ ...editForm, full_name: e.target.value })}
                       />
                     </label>
-                    {row.role === "worker" && (
+                    {row.role === "worker" && editForm.employment_type !== "PF" && (
                       <label>
-                        Monthly salary (₹)
+                        {editForm.employment_type === "NO_PAY_NO_WORK"
+                          ? "Daily wage (₹)"
+                          : "Monthly salary (₹)"}
                         <input
                           type="text"
                           inputMode="numeric"
@@ -853,6 +876,35 @@ export default function Staff() {
                           )}
                         />
                       </label>
+                    )}
+                    {row.role === "worker" && editForm.employment_type === "PF" && (
+                      <>
+                        <label>
+                          Basic (₹)
+                          <input type="text" inputMode="numeric" value={editForm.salary_basic}
+                            onChange={intFieldHandler((n) => setEditForm((f) => ({ ...f, salary_basic: n })), 7)} />
+                        </label>
+                        <label>
+                          HRA (₹)
+                          <input type="text" inputMode="numeric" value={editForm.salary_hra}
+                            onChange={intFieldHandler((n) => setEditForm((f) => ({ ...f, salary_hra: n })), 7)} />
+                        </label>
+                        <label>
+                          Conveyance (₹)
+                          <input type="text" inputMode="numeric" value={editForm.salary_conveyance}
+                            onChange={intFieldHandler((n) => setEditForm((f) => ({ ...f, salary_conveyance: n })), 7)} />
+                        </label>
+                        <label>
+                          Washing (₹)
+                          <input type="text" inputMode="numeric" value={editForm.salary_washing}
+                            onChange={intFieldHandler((n) => setEditForm((f) => ({ ...f, salary_washing: n })), 7)} />
+                        </label>
+                        <div className="pf-total" style={{ gridColumn: "1 / -1" }}>
+                          Total salary: ₹{(editForm.salary_basic + editForm.salary_hra +
+                            editForm.salary_conveyance + editForm.salary_washing).toLocaleString("en-IN")}
+                          {" · "}PF is 12% of Basic, ESI 0.75% of gross, plus professional tax.
+                        </div>
+                      </>
                     )}
                     <label>
                       Staff code
@@ -883,7 +935,7 @@ export default function Staff() {
                             <option value="NORMAL">Normal — salary ÷ 30, 4 leave days</option>
                             <option value="NO_PAY_NO_WORK">No pay no work — daily wage</option>
                             <option value="CONTRACT">Contract — salary ÷ 30, 4 leave days</option>
-                            <option value="PF">PF — salary ÷ 30, 4 leave days</option>
+                            <option value="PF">PF — Basic&HRA components, statutory deductions</option>
                           </select>
                         </label>
                         <label>
