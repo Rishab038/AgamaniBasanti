@@ -258,6 +258,26 @@ export default function Staff() {
   // inline confirmations instead of native popups: friendlier for a
   // non-technical owner, and native dialogs freeze embedded browsers
   const [pendingAction, setPendingAction] = useState<{ id: string; kind: string } | null>(null);
+
+  // What a delete would destroy. Fetched the moment Delete is chosen, so
+  // the owner is told the cost before the button, not after the mistake.
+  type DeleteImpact = {
+    attendance: number; punches: number; advances: number;
+    payslips: number; notifications: number; confirmed_payslips: number;
+  };
+  const [deleteImpact, setDeleteImpact] = useState<DeleteImpact | null>(null);
+
+  const askDelete = async (row: StaffRow) => {
+    setPendingAction({ id: row.id, kind: "delete" });
+    setDeleteImpact(null);
+    try {
+      const res = await callStaffAdmin({ action: "delete_impact", profile_id: row.id });
+      setDeleteImpact(res as DeleteImpact);
+    } catch {
+      // if the count fails the delete still works; just no preview
+    }
+  };
+
   const [newPin, setNewPin] = useState("");
   const [newPhone, setNewPhone] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -290,9 +310,20 @@ export default function Staff() {
       } else if (kind === "clear_device") {
         await callStaffAdmin({ action: "clear_device", profile_id: row.id });
         setNotice(`${row.full_name} can now use a new phone.`);
-      } else if (kind === "delete") {
-        await callStaffAdmin({ action: "delete_account", profile_id: row.id });
-        setNotice(`${row.full_name} has been removed.`);
+      } else if (kind === "delete" || kind === "delete_force") {
+        const res = await callStaffAdmin({
+          action: "delete_account",
+          profile_id: row.id,
+          force: kind === "delete_force",
+        });
+        const wiped = res?.erased as Record<string, number> | null | undefined;
+        const days = wiped?.attendance_days ?? 0;
+        setNotice(
+          days > 0
+            ? `${titleCase(row.full_name)} and ${days} day${days > 1 ? "s" : ""} of their records have been deleted.`
+            : `${titleCase(row.full_name)} has been removed.`,
+        );
+        setDeleteImpact(null);
       }
       await load();
     } catch (err) {
@@ -843,7 +874,7 @@ export default function Staff() {
                           <div className="menu-sep" />
                           <button
                             className="danger"
-                            onClick={() => { setOpenMenu(null); setPendingAction({ id: row.id, kind: "delete" }); }}
+                            onClick={() => { setOpenMenu(null); askDelete(row); }}
                           >
                             Delete
                           </button>
@@ -904,15 +935,59 @@ export default function Staff() {
                           Save
                         </button>
                       </>
+                    ) : pendingAction.kind === "delete" ? (
+                      (() => {
+                        const i = deleteImpact;
+                        const history = i
+                          ? i.attendance + i.punches + i.advances + i.payslips
+                          : 0;
+                        const bits = i
+                          ? [
+                              i.attendance && `${i.attendance} attendance day${i.attendance > 1 ? "s" : ""}`,
+                              i.advances && `${i.advances} advance${i.advances > 1 ? "s" : ""}`,
+                              i.payslips && `${i.payslips} payslip${i.payslips > 1 ? "s" : ""}`,
+                            ].filter(Boolean).join(", ")
+                          : "";
+                        return (
+                          <>
+                            <span className="delete-warn">
+                              {!i
+                                ? "Checking their records…"
+                                : history === 0
+                                ? "Nothing recorded for them yet — safe to delete."
+                                : `Also deletes ${bits}.` +
+                                  (i.confirmed_payslips > 0
+                                    ? ` ${i.confirmed_payslips} of those payslip(s) are from a confirmed salary month.`
+                                    : "")}
+                            </span>
+                            <button
+                              className="btn small danger"
+                              disabled={!i}
+                              onClick={() => runAction(row, history > 0 ? "delete_force" : "delete")}
+                            >
+                              {history > 0 ? "Delete permanently" : "Confirm delete"}
+                            </button>
+                            {history > 0 && row.active && (
+                              <button
+                                className="btn small"
+                                onClick={() => runAction(row, "toggle_active")}
+                              >
+                                Deactivate instead
+                              </button>
+                            )}
+                          </>
+                        );
+                      })()
                     ) : (
                       <button className="btn small danger" onClick={() => runAction(row, pendingAction.kind)}>
-                        Confirm{pendingAction.kind === "delete" ? " delete" : ""}?
+                        Confirm?
                       </button>
                     )}
                     <button
                       className="btn small"
                       onClick={() => {
                         setPendingAction(null);
+                        setDeleteImpact(null);
                         setNewPin(""); setNewPassword(""); setNewPhone("");
                       }}
                     >

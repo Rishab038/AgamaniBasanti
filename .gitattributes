@@ -1,0 +1,12 @@
+# Windows script hosts require CRLF. A .bat saved with Unix line endings
+# makes cmd.exe misparse the file and close the window instantly, with no
+# error shown — which is exactly what happened to the shop PC installer.
+# Force these to stay CRLF no matter what platform checks them out.
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+*.ps1  text eol=crlf
+*.vbs  text eol=crlf
+
+# Everything else stays LF.
+*.sh   text eol=lf
+*.py   text eol=lf

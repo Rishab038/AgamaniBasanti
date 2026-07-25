@@ -38,12 +38,23 @@ before handover; ✅ verified done.
 
 ## ⚠️ Before handover
 
-- [ ] **Push notifications untested end-to-end.** No phone has the
-      FCM-enabled APK yet (zero push tokens registered). Install the
-      latest APK on one phone, open it, allow notifications, then fire a
-      test (approve/reject any advance). Notifications are queued
-      correctly server-side (cron healthy, 0 failures) — only delivery
-      is unverified.
+- [ ] **Push notifications — two real bugs found and fixed 2026-07-25,
+      one live confirmation still needed.**
+      Diagnosis: reminders *were* being generated correctly (64 queued:
+      shift_soon, late, checkout_due, advance) and the send-push cron ran
+      every 5 min returning HTTP 200 — but always `{"sent":0}`, because
+      **not one worker had a push_token**. `push.ts` wrote it with a
+      direct `update` on `profiles`, whose only UPDATE policy is
+      owner-only, so it matched zero rows and still reported success.
+      Fixes: migration `0031` adds `fn_set_push_token` (SECURITY DEFINER,
+      validates the token format, writes one column for `auth.uid()`); the
+      app calls that RPC and now logs failures instead of swallowing them;
+      and `send-push` only pushes notifications younger than 60 minutes,
+      so a stale "your shift starts soon" cannot arrive at midnight. The
+      64-row backlog was marked sent (still visible in-app, not pushed).
+      **Remaining:** install the new APK, open it, allow notifications,
+      then check `select count(push_token) from profiles` — once that is
+      non-zero, delivery can be confirmed with any advance approve/reject.
 - [ ] **Distribute the new APK to all staff phones.** Only the newest
       build (with google-services.json) can receive notifications. Older
       installs keep working for attendance but stay silent.

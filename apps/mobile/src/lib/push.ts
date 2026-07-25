@@ -43,8 +43,16 @@ export async function registerForPush(profileId: string): Promise<void> {
     const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
     if (!token) return;
 
-    await supabase.from("profiles").update({ push_token: token }).eq("id", profileId);
-  } catch {
-    // notifications are a convenience; never block attendance on them
+    // Must go through the RPC: profiles has one UPDATE policy and it is
+    // owner-only, so a direct update from a worker matches no rows and
+    // reports success — which is exactly how every token was lost until
+    // now. fn_set_push_token writes the single column for auth.uid().
+    const { error } = await supabase.rpc("fn_set_push_token", { p_token: token });
+    if (error) throw error;
+  } catch (e) {
+    // Notifications are a convenience — never block attendance on them.
+    // But log it: a silent failure here is invisible from the outside,
+    // and the whole reminder feature depends on this one write landing.
+    console.warn("push registration failed:", e);
   }
 }

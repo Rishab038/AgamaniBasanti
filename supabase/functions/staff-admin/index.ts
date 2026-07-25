@@ -22,9 +22,13 @@
 //   change_phone   { profile_id, new_phone } -- staff changed their number
 //   set_active     { profile_id, active }
 //   clear_device   { profile_id }            -- allow login from a new phone
-//   delete_account { profile_id }
-//                  -- refuses: deleting yourself, deleting the last owner,
-//                     or anyone who already has attendance history
+//   delete_account { profile_id, force? }
+//                  -- refuses: deleting yourself, or the last owner.
+//                     History (attendance, advances, payslips) blocks a
+//                     plain delete and returns 409 needs_force; force
+//                     erases that history first, then the login.
+//   delete_impact  { profile_id }
+//                  -- counts of what a forced delete would destroy
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -337,15 +341,88 @@ Deno.serve(async (req) => {
           }
         }
 
-        // Guard 3: attendance history is payroll evidence. Foreign keys
-        // refuse the delete; deactivating keeps the record intact.
-        const { error } = await admin.auth.admin.deleteUser(body.profile_id);
-        if (error) {
+        // Every table below points at profiles with ON DELETE NO ACTION,
+        // so history physically blocks the delete. The owner can now
+        // choose to erase it anyway (force), which is why the dashboard
+        // shows the exact counts before asking.
+        const pid = body.profile_id as string;
+        const { error: plainErr } = await admin.auth.admin.deleteUser(pid);
+        if (!plainErr) return json({ ok: true, erased: null });
+
+        if (!body.force) {
           return json({
-            error: `${target.full_name} already has attendance history, which payroll records depend on. Deactivate them instead.`,
+            error: `${target.full_name} has attendance history that payroll records depend on. ` +
+              `Deactivate them, or choose "Delete permanently" to erase the history too.`,
+            needs_force: true,
+          }, 409);
+        }
+
+        // Ordered child-first so no foreign key is ever left dangling.
+        // Columns naming this person as the ACTOR on someone else's row
+        // (who approved a day, who decided an advance) are nulled rather
+        // than deleted — that is another worker's record, not theirs.
+        const erased: Record<string, number> = {};
+        const wipe = async (table: string, column: string) => {
+          const { count } = await admin
+            .from(table).delete({ count: "exact" }).eq(column, pid);
+          if (count) erased[table] = count;
+        };
+        const detach = async (table: string, column: string) => {
+          await admin.from(table).update({ [column]: null }).eq(column, pid);
+        };
+
+        await detach("attendance_days", "approved_by");
+        await detach("advances", "decided_by");
+        await detach("leave_requests", "decided_by");
+        await detach("payroll_runs", "created_by");
+
+        await wipe("notifications", "profile_id");
+        await wipe("attendance_app", "profile_id");
+        await wipe("attendance_days", "profile_id");
+        await wipe("advances", "profile_id");
+        await wipe("leave_requests", "profile_id");
+        await wipe("payslips", "profile_id");
+
+        const { error: forcedErr } = await admin.auth.admin.deleteUser(pid);
+        if (forcedErr) {
+          return json({
+            error: `Could not delete ${target.full_name}: ${forcedErr.message}`,
           }, 400);
         }
-        return json({ ok: true });
+        return json({ ok: true, erased });
+      }
+
+      // Counts of everything a delete would destroy, so the dashboard can
+      // show the owner what they are about to lose before they confirm.
+      case "delete_impact": {
+        const pid = body.profile_id as string;
+        const countOf = async (table: string) => {
+          const { count } = await admin
+            .from(table).select("id", { count: "exact", head: true }).eq("profile_id", pid);
+          return count ?? 0;
+        };
+        const [attendance, punches, advances, payslips, notifications] = await Promise.all([
+          countOf("attendance_days"),
+          countOf("attendance_app"),
+          countOf("advances"),
+          countOf("payslips"),
+          countOf("notifications"),
+        ]);
+
+        // A payslip inside a CONFIRMED run is a frozen salary record —
+        // worth naming separately, because that is the one thing here
+        // that cannot be reconstructed from the machine or the app.
+        const { count: frozen } = await admin
+          .from("payslips")
+          .select("id, payroll_runs!inner(status)", { count: "exact", head: true })
+          .eq("profile_id", pid)
+          .eq("payroll_runs.status", "CONFIRMED");
+
+        return json({
+          ok: true,
+          attendance, punches, advances, payslips, notifications,
+          confirmed_payslips: frozen ?? 0,
+        });
       }
 
       default:

@@ -22,6 +22,15 @@ supabase/.temp/
 # Bridge state
 bridge/last_sync.json
 bridge/config.json
+bridge/bridge.log
+bridge/__pycache__/
+
+# Client bundles. These carry a filled-in config.json, so they hold the
+# shared secret — they must never reach the repo. Built by
+# bridge/make_client_bundle.ps1 into an ignored folder for exactly this
+# reason: nobody has to remember to strip a key before pushing.
+*.zip
+bridge-client/
 
 # OS / editor
 .DS_Store

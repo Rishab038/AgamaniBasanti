@@ -31,10 +31,21 @@ Deno.serve(async (req) => {
     return new Response("forbidden", { status: 403 });
   }
 
+  // Only deliver what is still worth saying. These messages are
+  // time-critical ("your shift starts soon", "you have not checked in"),
+  // so one that has been sitting in the queue for hours is not merely
+  // useless, it is misleading. Anything older than the window stays in
+  // the table — the worker still sees it in the app's list — but is not
+  // pushed. This also stops a backlog from arriving in one burst the
+  // first time a phone registers a token.
+  const MAX_AGE_MINUTES = 60;
+  const freshSince = new Date(Date.now() - MAX_AGE_MINUTES * 60_000).toISOString();
+
   const { data, error } = await admin
     .from("notifications")
     .select("id, profile_id, title, body, profiles!inner(push_token)")
     .eq("sent_push", false)
+    .gte("created_at", freshSince)
     .not("profiles.push_token", "is", null)
     .limit(100);
 
