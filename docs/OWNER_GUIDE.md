@@ -12,14 +12,41 @@ Log in with your email and password. It works on your phone's browser too.
 Open the dashboard. The **Today** page shows everyone at a glance:
 
 - **Checked in today** — who has come to work.
-- **Need your decision** — days where something looks off (came very late,
-  left early, only one of app/fingerprint worked). Tap the Attendance page,
-  open that person's day, and pick what it should count as: Present, Half
-  day, Overtime, or No pay. **Your choice is what decides their salary.**
+- **Need your decision** — only the days that genuinely need you (see the
+  rules below). You settle these **on the Today page itself**: the last
+  column, "Your call", has **Approve · Half day · No pay** on the row.
+  One tap and it is done. **Your choice is what decides their salary.**
+
+  The person's name, their check-in time and their photo are all on that
+  same row, so you are deciding with everything in front of you. Anything
+  already settled shows a quiet "Done", and you can still change any of
+  it later on the Attendance page.
 - **Advance requests** appear at the bottom — Approve or Not now, one tap.
   The worker's app tells them your answer instantly.
 
 That's it for a normal day.
+
+### What is decided for you, and what is not
+
+You should not have to approve someone for turning up on time, so most
+days now settle themselves:
+
+| When they checked in | What happens |
+|---|---|
+| Within 15 minutes of their shift start | **Approved automatically.** Nothing for you to do. |
+| Late, but before 12:00 | Counted present, and shown with **how late** they were. |
+| After 12:00 | **Left for you** — marked "After 12 — your call". |
+| No check-in at all by 12:00 | Marked **Absent** for the day. |
+
+Holidays, weekly offs and approved leave are never marked absent.
+
+**You can override any of it.** An automatic result is only a starting
+point — open the day on the Attendance page and set it to whatever is
+right, and your choice is never changed back.
+
+Late arrivals stand out in their own amber mark with the exact time —
+`1h 21m late` — so you can see at a glance who is slipping, even on days
+that needed no decision from you.
 
 ## Every month (salary day)
 
@@ -81,7 +108,9 @@ and PIN. If they forgot the PIN: Staff page → Manage → **Reset PIN**.
 | What you see | What it means | What to do |
 |---|---|---|
 | "— missing" under Fingerprint | They used the app but not the machine (or machine is offline) | If the machine was working, ask the worker; decide the day on the Attendance page |
-| "Check this" on a day | Only one of the two checks happened | Open Attendance, look, decide |
+| "Check this" on a day | Only one of the two checks happened, and they were late or had no shift set | Open Attendance, look, decide |
+| "After 12 — your call" | They arrived after the noon cutoff | Decide: Present, Half day or No pay |
+| Someone marked Absent who did come | They arrived after 12:00, or never checked in | Open their day and set it to Present |
 | Worker says app won't let them check in | They are outside the shop area, or location is off on their phone | Ask them to switch on location and stand inside the shop |
 | A day is marked Absent but they came | They forgot to punch | Attendance page → that day → decide it as Present |
 
@@ -90,6 +119,34 @@ and PIN. If they forgot the PIN: Staff page → Manage → **Reset PIN**.
 The switcher in the sidebar changes which shop you are looking at —
 Today, Staff, Attendance and Salary all follow it. Each shop has its own
 join code and its own fingerprint machine.
+
+## Credit customers (clothes taken on due)
+
+Staff at the billing counter can record a customer who takes clothes
+without paying in full. You see every entry on the **Credit** page.
+
+**Switching it on for someone**
+Staff page → **Manage** → **Allow billing counter**. That person gets a
+new **Credit** tab in their app straight away — no reinstall. Anyone
+marked this way shows a small "Billing counter" tag next to their name,
+so you can always see who has it.
+
+To take it away: same menu → **Remove billing counter access**. Entries
+they already recorded are kept.
+
+**What the staff member enters**
+Customer name, phone, bill number, the bill total, how much is being
+taken on due, and **a photo of the bill** (required — it is the proof of
+what is owed). Once saved they cannot edit it. Only you can.
+
+**What you do**
+Open **Credit**. "Still owed" lists everyone with money outstanding, the
+oldest highlighted once it passes a month. Click the small bill image to
+read it full size. When someone pays, press **Mark paid** — it moves to
+the "Paid" list, and **Undo** is there if you press it by mistake.
+
+The sidebar shows a count of customers who still owe money, and the top
+of the page totals it up.
 
 ---
 

@@ -24,12 +24,14 @@ import {
 } from "react-native";
 import * as Location from "expo-location";
 import * as Haptics from "expo-haptics";
+import * as Updates from "expo-updates";
 import { Branch, Profile, supabase } from "../../lib/supabase";
 import { evaluateFence, FenceResult } from "../../lib/geofence";
 import { runSpoofChecks } from "../../lib/antispoof";
 import { performCheckin } from "../../lib/checkin";
 import { pendingCount } from "../../lib/queue";
 import { colors, fonts, radius, shadow } from "../../lib/theme";
+import PhotoCapture from "../../components/PhotoCapture";
 import type { PunchKind, SharedData } from "../MainScreen";
 
 const GRACE_MIN = 15;
@@ -168,8 +170,19 @@ export default function HomeTab({
     ]).start(() => setSuccess(null));
   };
 
-  /** record a punch — one tap, no camera step */
-  const punch = async (s: Stage) => {
+  // Arrival is the punch the geofence has to get right, so that is the
+  // one that carries a photo. Lunch and departure stay one tap — the
+  // person is already established as present by then.
+  const [photoFor, setPhotoFor] = useState<Stage | null>(null);
+
+  const startPunch = (s: Stage) => {
+    if (busy) return;
+    if (s.kind === "ARRIVAL") setPhotoFor(s);
+    else punch(s);
+  };
+
+  /** record a punch; photo is optional and never blocks it */
+  const punch = async (s: Stage, photoBase64: string | null = null) => {
     if (busy) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setBusy(true);
@@ -191,7 +204,13 @@ export default function HomeTab({
         punchKind: s.kind,
         location,
         wifiSsid: null,
-        flagReasons: [...spoof.reasons, ...(fence.via === "wifi" ? ["wifi_fallback"] : [])],
+        flagReasons: [
+          ...spoof.reasons,
+          ...(fence.via === "wifi" ? ["wifi_fallback"] : []),
+          // worth knowing later why a doubtful fence has no photo to check
+          ...(s.kind === "ARRIVAL" && !photoBase64 ? ["no_photo"] : []),
+        ],
+        photoBase64,
       });
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -304,7 +323,7 @@ export default function HomeTab({
               onPressOut={() =>
                 Animated.spring(press, { toValue: 1, useNativeDriver: true, speed: 18 }).start()
               }
-              onPress={() => stage && punch(stage)}
+              onPress={() => stage && startPunch(stage)}
               disabled={!enabled}
               style={[
                 styles.bigButton,
@@ -413,12 +432,44 @@ export default function HomeTab({
         </Animated.View>
       )}
 
+      {/* Which code the phone is actually running. Invisible in normal
+          use, but when someone says "the new thing isn't showing", this
+          is the difference between guessing and knowing — the app can
+          be a version behind without anything looking wrong. */}
+      <Text style={styles.buildLine}>
+        {Updates.isEmbeddedLaunch ? "app build" : "update"}
+        {Updates.createdAt
+          ? ` · ${Updates.createdAt.toLocaleDateString("en-IN", {
+              day: "numeric", month: "short",
+            })} ${Updates.createdAt.toLocaleTimeString("en-IN", {
+              hour: "numeric", minute: "2-digit",
+            })}`
+          : ""}
+      </Text>
+
+      <PhotoCapture
+        visible={photoFor !== null}
+        onDone={(b64) => {
+          const s = photoFor;
+          setPhotoFor(null);
+          if (s) punch(s, b64);          // a skipped or failed photo still checks in
+        }}
+        onCancel={() => setPhotoFor(null)}   // backing out records nothing
+      />
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   scroll: { padding: 20, paddingTop: 58, paddingBottom: 24 },
+  buildLine: {
+    fontFamily: fonts.regular,
+    fontSize: 11,
+    color: colors.ink3,
+    textAlign: "center",
+    marginTop: 22,
+    opacity: 0.7,
+  },
 
   header: { flexDirection: "row", alignItems: "center", gap: 12 },
   greeting: { fontFamily: fonts.black, fontSize: 23, color: colors.ink, letterSpacing: -0.3 },

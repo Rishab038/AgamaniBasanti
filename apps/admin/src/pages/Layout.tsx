@@ -8,6 +8,7 @@ import {
   Users,
   BadgeCheck,
   ReceiptIndianRupee,
+  NotebookPen,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useBranch } from "../lib/branch";
@@ -15,6 +16,7 @@ import { useBranch } from "../lib/branch";
 export default function Layout() {
   const location = useLocation();
   const [pendingCount, setPendingCount] = useState(0);
+  const [creditCount, setCreditCount] = useState(0);
   const { branches, branchId, setBranchId, branch } = useBranch();
 
   // approvals badge — for the shop currently being viewed
@@ -28,6 +30,14 @@ export default function Layout() {
       .eq("status", "PENDING")
       .eq("profiles.branch_id", branchId)
       .then(({ count }) => setPendingCount(count ?? 0));
+
+    // unpaid credit customers — money still out on the street
+    supabase
+      .from("credit_sales")
+      .select("id", { count: "exact", head: true })
+      .eq("branch_id", branchId)
+      .is("settled_at", null)
+      .then(({ count }) => setCreditCount(count ?? 0));
   }, [location.pathname, branchId]);
 
   const links = [
@@ -35,6 +45,7 @@ export default function Layout() {
     { to: "/staff", label: "Staff", icon: Users },
     { to: "/attendance", label: "Attendance", icon: CalendarCheck2 },
     { to: "/approvals", label: "Approvals", icon: BadgeCheck, count: pendingCount },
+    { to: "/credit", label: "Credit", icon: NotebookPen, count: creditCount },
     { to: "/salary", label: "Salary", icon: ReceiptIndianRupee },
     { to: "/settings", label: "Settings", icon: Settings2 },
   ];

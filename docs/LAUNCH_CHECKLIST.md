@@ -61,13 +61,12 @@ before handover; ✅ verified done.
 - [x] **Test Worker (W33)** — keeping deliberately (client's call) as the
       standing test login. It has ₹0 salary so it will appear in payroll
       runs at zero; harmless, but ignore that row.
-- [ ] **234 old selfies (11 MB) — deletion armed, needs one command.**
-      `selfie_retention_days` is temporarily set to **-40** so the
-      existing `cleanup-selfies` function will sweep the current month.
-      Run the command in the handover notes, then set the value back to
-      90. Nothing displays these images anymore and the consent screen
-      now tells workers "the app never takes your picture", so removing
-      them is the privacy-correct end state.
+- [x] ~~234 old selfies — deletion armed, needs one command~~ — **resolved
+      2026-07-27 without the manual step.** Check-in photos were
+      reinstated with a 2-day retention and a nightly cron (see the
+      section at the end), so the backlog is swept automatically. The
+      dangerous `-40` setting is gone; it is `2`, and the function now
+      refuses anything under 1 day.
 - [ ] **Connect the fingerprint machines.** `device_punches` has 0 rows —
       no machine has ever sent a real punch. When the T304F arrives at
       each shop: plug into shop internet, set the server address to
@@ -111,3 +110,32 @@ before handover; ✅ verified done.
 - [x] RLS verified: workers see only their own rows; salary owner-only
 - [x] Self-onboarding flow (join code → owner approval) live
 - [x] Offline queue, geofence, anti-spoofing, audit log in place
+
+## Check-in photos (added 2026-07-27)
+
+Reinstated as the tie-breaker for the geofence, not as an identity check
+(the fingerprint machine does that). Behaviour:
+
+- Taken on **arrival only** — lunch and departure stay one tap.
+- **Optional at every step.** No camera permission, a broken shutter, or
+  "Skip" still records the punch; the row is tagged `no_photo` so a
+  doubtful fence with no picture is visible rather than silent.
+- Front camera, downscaled to 640px / 50% JPEG before upload.
+- Rides in the offline queue as base64, so a punch taken with no signal
+  keeps its photo and uploads on sync.
+- `selfie_sha256` is stored, so the record can still show the image was
+  not swapped after the file itself is gone.
+
+**Retention is 2 days**, enforced by a pg_cron job at 01:50 IST calling
+`cleanup-selfies`. The function was rewritten to delete by FILE AGE — the
+old one removed whole `yyyy-mm` month folders, which can never express a
+2-day rule and is why 234 images from the first experiment were still in
+the bucket. It refuses any retention below 1 day, so a stray setting
+cannot wipe today's evidence.
+
+The consent screen was updated in the same change: it previously told
+workers "the app never takes your picture", which shipping a camera would
+have made false.
+
+Owner sees them on **Today** — a thumbnail per row, click to enlarge.
+URLs are signed and expire in an hour; the bucket stays private.

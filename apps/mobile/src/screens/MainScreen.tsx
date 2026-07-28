@@ -13,6 +13,7 @@ import { colors, fonts, radius, shadow } from "../lib/theme";
 import HomeTab from "./tabs/HomeTab";
 import AttendanceTab from "./tabs/AttendanceTab";
 import MoneyTab from "./tabs/MoneyTab";
+import CreditTab from "./tabs/CreditTab";
 
 export type DayRecord = { work_date: string; status: string; late_minutes: number };
 export type PunchKind = "ARRIVAL" | "LUNCH_OUT" | "LUNCH_IN" | "DEPARTURE";
@@ -45,6 +46,10 @@ const TABS = [
   { key: "home", label: "Home", icon: "home-outline", iconOn: "home" },
   { key: "attendance", label: "Attendance", icon: "calendar-outline", iconOn: "calendar" },
   { key: "money", label: "Money", icon: "wallet-outline", iconOn: "wallet" },
+  // Only for whoever the owner has put on the billing counter — see
+  // the filter below. A fourth tab on every worker's phone would be a
+  // permanent locked door for the 34 people who cannot use it.
+  { key: "credit", label: "Credit", icon: "receipt-outline", iconOn: "receipt" },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -177,9 +182,12 @@ export default function MainScreen({
 
       drain().then(reload);
 
-      // only look for an OTA update after a real gap, so quick app
-      // switches don't hammer the update server
-      if (idleMs > 60_000 && !__DEV__) {
+      // Only look for an OTA update after a real gap, so flicking
+      // between apps does not hammer the update server. Was 60s, which
+      // made a freshly shipped change feel like it had not arrived;
+      // 15s still filters out app-switching but reaches someone who
+      // put the phone down for a moment.
+      if (idleMs > 15_000 && !__DEV__) {
         try {
           const res = await Updates.checkForUpdateAsync();
           if (res.isAvailable) {
@@ -198,16 +206,26 @@ export default function MainScreen({
     monthDays, todayPunches, advances, advancePaid, lateSyncDates, pending, reload,
   };
 
+  const visibleTabs = TABS.filter((t) => t.key !== "credit" || profile.can_bill);
+
+  // If the owner withdraws billing access while the app is open, the tab
+  // vanishes from under whatever is on screen — send them somewhere real
+  // rather than leaving an empty body behind.
+  useEffect(() => {
+    if (tab === "credit" && !profile.can_bill) setTab("home");
+  }, [tab, profile.can_bill]);
+
   return (
     <View style={styles.root}>
       <View style={styles.body}>
         {tab === "home" && <HomeTab profile={profile} branch={branch} data={shared} />}
         {tab === "attendance" && <AttendanceTab data={shared} />}
         {tab === "money" && <MoneyTab profile={profile} data={shared} />}
+        {tab === "credit" && <CreditTab profile={profile} branch={branch} />}
       </View>
 
       <View style={[styles.tabBar, shadow.card]}>
-        {TABS.map((t) => {
+        {visibleTabs.map((t) => {
           const active = tab === t.key;
           return (
             <TouchableOpacity

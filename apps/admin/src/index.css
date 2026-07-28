@@ -499,6 +499,182 @@ td { font-size: 13.5px; font-weight: 400; color: var(--ink); }
 .pill { --dot: currentColor; }
 .pill > span { color: var(--ink); }
 
+/* Lunch: the times on top, the length underneath. The length is the
+   part the owner is actually judging, so it gets its own line rather
+   than being buried in a longer sentence. */
+.lunch {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.lunch-sub {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-3);
+}
+/* over their allowance — stated, not scolded */
+.lunch-sub.over { color: var(--amber); font-weight: 600; }
+/* still away: the one lunch state that is unresolved right now */
+.lunch-out { color: var(--accent); font-weight: 600; }
+
+/* Ruling on a day from the Today row. Kept on one line so the column
+   stays narrow, and wrapping instead of scrolling on a small screen. */
+.day-acts {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+/* a day already ruled on: present but quiet, so the eye skips to the
+   rows that still want something */
+.settled {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink-3);
+}
+
+/* Part-payment against a credit sale: the balance is the headline, so
+   what has already come in sits under it in green rather than competing. */
+.paid-so-far { color: var(--good); font-weight: 500; }
+
+/* Who took which instalment — opened only when the owner asks. */
+.pay-history-cell { background: var(--bg); }
+.pay-history { display: flex; flex-direction: column; gap: 6px; padding: 4px 0; }
+.pay-row {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+.pay-amt {
+  font-weight: 600;
+  color: var(--good);
+  font-variant-numeric: tabular-nums;
+  min-width: 76px;
+}
+.pay-method {
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 999px;
+  color: var(--ink-2);
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+/* the reference is meant to be matched against a bank statement, so it
+   is set in a mono face and is selectable at a glance */
+.pay-ref {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--ink-2);
+  background: var(--bg);
+  padding: 1px 6px;
+  border-radius: 4px;
+  user-select: all;
+}
+.pay-noproof { font-size: 12px; color: var(--rose); font-weight: 600; }
+.pay-row .shot { width: 30px; height: 30px; }
+
+/* Marks a worker who can record credit customers. Quiet, but present
+   on the row — this is authority over money, not a preference. */
+.tag-bill {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  vertical-align: middle;
+}
+
+/* ---------- check-in photos ---------- */
+/* Small enough to scan past, big enough to recognise a face. The owner
+   only opens one when the location looks doubtful. */
+.shot-btn {
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: none;
+  cursor: pointer;
+  line-height: 0;
+  overflow: hidden;
+  transition: border-color 0.12s ease;
+}
+.shot-btn:hover { border-color: var(--accent); }
+.shot {
+  width: 38px;
+  height: 38px;
+  object-fit: cover;
+  display: block;
+}
+.shot-zoom {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(28, 22, 18, 0.72);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 24px;
+}
+.shot-zoom figure {
+  margin: 0;
+  background: var(--surface);
+  border-radius: 14px;
+  overflow: hidden;
+  max-width: min(440px, 92vw);
+}
+.shot-zoom img {
+  display: block;
+  width: 100%;
+  max-height: 68vh;
+  object-fit: contain;
+  background: #000;
+}
+.shot-zoom figcaption {
+  padding: 12px 16px;
+  font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.shot-zoom figcaption span {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink-3);
+}
+
+/* Lateness is what the owner scans the Today column for, so unlike every
+   other pill it is a filled chip rather than a dot and a word — legible
+   in one pass down the column, and it carries the actual duration. */
+.pill.late {
+  color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 13%, transparent);
+  border: 1px solid color-mix(in srgb, var(--amber) 30%, transparent);
+  padding: 2px 9px 2px 7px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.pill.late::before {
+  width: 5px;
+  height: 5px;
+}
+/* a day can be two things at once — late AND still needing a ruling */
+.pill-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 /* ---------- misc ---------- */
 .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .inactive td { color: var(--ink-3); }

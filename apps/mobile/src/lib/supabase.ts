@@ -36,6 +36,22 @@ export type Profile = {
   shift_start: string | null;
   shift_end: string | null;
   lunch_minutes: number;
+  /** owner-granted: may record credit sales at the billing counter */
+  can_bill: boolean;
+};
+
+export type CreditSale = {
+  id: string;
+  customer_name: string;
+  customer_phone: string | null;
+  bill_no: string | null;
+  bill_amount: number;
+  due_amount: number;
+  /** sum of payments taken so far; balance is due_amount - paid_amount */
+  paid_amount: number;
+  note: string | null;
+  settled_at: string | null;
+  created_at: string;
 };
 
 export type Branch = {

@@ -30,6 +30,7 @@ type StaffRow = {
   salary_hra: number;
   salary_conveyance: number;
   salary_washing: number;
+  can_bill: boolean;
 };
 
 const EMPLOYMENT_LABEL: Record<string, string> = {
@@ -329,6 +330,27 @@ export default function Staff() {
     } catch (err) {
       setError((err as Error).message);
     }
+  };
+
+  // Billing-counter permission. A direct update rather than an edge
+  // function: profiles is already owner-only for UPDATE in the database,
+  // so the rule is enforced where it matters and a second copy of it in
+  // a function would only be another place to get it wrong.
+  const toggleBilling = async (row: StaffRow) => {
+    setError(null);
+    const next = !row.can_bill;
+    const { error: err } = await supabase
+      .from("profiles").update({ can_bill: next }).eq("id", row.id);
+    if (err) {
+      setError(err.message);
+      return;
+    }
+    setNotice(
+      next
+        ? `${titleCase(row.full_name)} can now record credit customers in the app.`
+        : `${titleCase(row.full_name)} can no longer record credit customers. Entries they already made are kept.`,
+    );
+    await load();
   };
 
   // ---- self-registration approvals ----
@@ -787,6 +809,9 @@ export default function Staff() {
             <tr className={row.active ? "" : "inactive"}>
               <td>
                 {titleCase(row.full_name)}{!row.active && " (inactive)"}
+                {/* who is on the counter is worth seeing without opening
+                    a menu — it is a permission over money, not a setting */}
+                {row.can_bill && <span className="tag-bill">Billing counter</span>}
                 {(row.phone || row.shift_start) && (
                   <div className="note muted">
                     {row.phone}
@@ -862,6 +887,11 @@ export default function Staff() {
                                   Allow a new phone
                                 </button>
                               )}
+                              <button onClick={() => { setOpenMenu(null); toggleBilling(row); }}>
+                                {row.can_bill
+                                  ? "Remove billing counter access"
+                                  : "Allow billing counter"}
+                              </button>
                               <button onClick={() => { setOpenMenu(null); setPendingAction({ id: row.id, kind: "toggle_active" }); }}>
                                 {row.active ? "Deactivate" : "Activate"}
                               </button>

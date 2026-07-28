@@ -6,10 +6,11 @@
 // free of legal boilerplate, and the acknowledgement is recorded
 // against the profile rather than assumed.
 //
-// Selfie capture was removed: the fingerprint machine already proves
-// physical presence, so the photo added a privacy burden without
-// adding evidence. Saying so plainly here is worth more than the
-// feature was.
+// The check-in photo is back, so this screen has to say so — it
+// previously promised "the app never takes your picture", and leaving
+// that in place while quietly shipping a camera would be exactly the
+// kind of thing the Act exists to prevent. The wording below states
+// what is taken, why, and that it is deleted after two days.
 
 import { useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -28,9 +29,9 @@ const POINTS = [
     body: "Your check-in, lunch break and check-out — nothing else.",
   },
   {
-    icon: "📵",
-    title: "No photos",
-    body: "The app never takes your picture. Your fingerprint on the shop machine is the second check.",
+    icon: "📷",
+    title: "A photo when you check in",
+    body: "Only at check-in, and only to show you were at the shop if the location check is unclear. It is deleted after 2 days. You can check in without it.",
   },
   {
     icon: "👤",
