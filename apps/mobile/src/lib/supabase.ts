@@ -40,8 +40,26 @@ export type Profile = {
   can_bill: boolean;
 };
 
+/** a customer's page in the shop's credit book */
+export type CustomerBalance = {
+  id: string;
+  branch_id: string;
+  name: string;
+  phone: string | null;
+  bill_count: number;
+  total_owed: number;
+  total_received: number;
+  /** positive = they owe the shop; negative = shop holds their advance */
+  balance: number;
+  advance_held: number;
+  last_bill_at: string | null;
+  last_payment_at: string | null;
+};
+
 export type CreditSale = {
   id: string;
+  /** the customer's page in the credit book this bill belongs to */
+  customer_id: string | null;
   customer_name: string;
   customer_phone: string | null;
   bill_no: string | null;

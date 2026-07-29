@@ -578,6 +578,141 @@ td { font-size: 13.5px; font-weight: 400; color: var(--ink); }
 .pay-noproof { font-size: 12px; color: var(--rose); font-weight: 600; }
 .pay-row .shot { width: 30px; height: 30px; }
 
+/* ---------- the credit book (khata) ---------- */
+/* The two totals the owner opens this page for, side by side the way
+   the paper book's cover works: what is owed to him, what he owes. */
+.khata-summary {
+  display: flex;
+  align-items: stretch;
+  padding: 0;
+  overflow: hidden;
+}
+.ks-half {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 18px 22px;
+}
+.ks-divider { width: 1px; background: var(--line); margin: 14px 0; }
+.ks-label { font-size: 12.5px; font-weight: 500; color: var(--ink-2); }
+.ks-give { font-size: 26px; font-weight: 600; color: var(--good); font-variant-numeric: tabular-nums; }
+.ks-get  { font-size: 26px; font-weight: 600; color: var(--accent); font-variant-numeric: tabular-nums; }
+.ks-note { font-size: 12px; color: var(--ink-3); }
+
+/* One line per person. A button, not a row, so the whole line is the
+   target and the keyboard reaches it. */
+.khata-list { padding: 0; overflow: hidden; }
+.kl-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 14px 18px;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  transition: background 0.12s ease;
+}
+.kl-row:last-child { border-bottom: 0; }
+.kl-row:hover { background: var(--bg); }
+.kl-avatar {
+  width: 40px; height: 40px;
+  flex: none;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+  background: var(--bg);
+  border: 1px solid var(--line);
+}
+.kl-who { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.kl-name {
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kl-ago { font-size: 12.5px; color: var(--ink-3); }
+.kl-money { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.kl-get  { font-weight: 600; color: var(--accent); font-variant-numeric: tabular-nums; }
+.kl-give { font-weight: 600; color: var(--good);   font-variant-numeric: tabular-nums; }
+.kl-nil  { color: var(--ink-3); }
+.kl-dir { font-size: 11px; color: var(--ink-3); }
+.kl-chev { color: var(--ink-3); font-size: 20px; line-height: 1; }
+
+/* ---------- one customer's page ---------- */
+.khata-back { margin-bottom: 12px; font-size: 13.5px; font-weight: 500; }
+.khata-back a { color: var(--ink-2); text-decoration: none; }
+.khata-back a:hover { color: var(--accent); }
+
+.khata-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.kh-avatar {
+  width: 52px; height: 52px;
+  border-radius: 50%;
+  display: grid; place-items: center;
+  font-size: 17px; font-weight: 600;
+  color: var(--ink-2);
+  background: var(--bg);
+  border: 1px solid var(--line);
+}
+.kh-who { flex: 1; min-width: 180px; }
+.kh-who h1 { margin: 0; font-size: 22px; }
+.kh-who p { margin: 2px 0 0; font-size: 13px; }
+.kh-bal { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.kh-bal-label { font-size: 12px; color: var(--ink-2); font-weight: 500; }
+.kh-bal-get  { font-size: 24px; font-weight: 600; color: var(--accent); font-variant-numeric: tabular-nums; }
+.kh-bal-give { font-size: 24px; font-weight: 600; color: var(--good);   font-variant-numeric: tabular-nums; }
+.kh-bal-nil  { font-size: 24px; font-weight: 600; color: var(--ink-3); }
+.kh-acts { display: flex; gap: 10px; flex-wrap: wrap; width: 100%; }
+
+/* The ledger itself: goods out in one column, money in the next, and
+   the balance carried down the edge exactly as on paper. */
+.ledger th.right, .ledger td.right { text-align: right; }
+.led-date { white-space: nowrap; }
+.led-out { font-weight: 600; color: var(--accent); font-variant-numeric: tabular-nums; }
+.led-in  { font-weight: 600; color: var(--good);   font-variant-numeric: tabular-nums; }
+.led-bal-owed { font-weight: 600; font-variant-numeric: tabular-nums; }
+.led-bal-adv  { font-weight: 600; color: var(--good); font-variant-numeric: tabular-nums; }
+.led-shot { margin-left: 10px; vertical-align: middle; }
+/* Proof is optional, so its absence is worth noting but not alarming —
+   stated quietly, the way a bookkeeper would pencil it in the margin. */
+.no-proof {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--amber);
+  background: var(--amber-bg);
+  white-space: nowrap;
+}
+
+/* money-in dialog */
+.entry-card {
+  background: var(--surface);
+  border-radius: 14px;
+  padding: 24px;
+  width: min(420px, 92vw);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.entry-card h3 { margin: 0; }
+.entry-card p { margin: 0; font-size: 13px; }
+.entry-acts { display: flex; gap: 10px; margin-top: 6px; }
+
 /* Marks a worker who can record credit customers. Quiet, but present
    on the row — this is authority over money, not a preference. */
 .tag-bill {

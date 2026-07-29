@@ -1,15 +1,19 @@
-// Credit sales — goods taken on due, recorded at the billing counter.
+// The credit book at the counter — the same khata the owner reads on
+// the dashboard, in the hands of whoever is serving.
 //
-// Only visible to staff the owner has given the billing permission to
-// (profiles.can_bill), and the database enforces the same rule, so a
-// worker who somehow reaches this screen still cannot file anything.
+// Organised around the customer rather than the bill, because that is
+// how the question arrives: "Sujata is here, what does she owe?" A
+// person's page holds every bill they have taken and every rupee they
+// have paid, and the balance at the top is the answer.
 //
-// The bill photo is required: it is the evidence behind the debt, and a
-// name and a number typed by hand are too easy to get wrong. Everything
-// here is written once and cannot be edited afterwards — the owner is
-// the only one who can change or settle an entry.
+// Money can be taken against one bill or against the account as a
+// whole. Paying with nothing owed is not an error — it is an advance,
+// and the balance simply goes the other way.
+//
+// Only staff the owner has switched on (profiles.can_bill) see this,
+// and the database enforces the same rule independently.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator, KeyboardAvoidingView, Platform, RefreshControl,
   ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View,
@@ -18,25 +22,22 @@ import * as Crypto from "expo-crypto";
 import * as Haptics from "expo-haptics";
 import * as ImageManipulator from "expo-image-manipulator";
 import { Ionicons } from "@expo/vector-icons";
-import { Branch, CreditSale, Profile, supabase } from "../../lib/supabase";
+import {
+  Branch, CreditSale, CustomerBalance, Profile, supabase,
+} from "../../lib/supabase";
 import PhotoCapture from "../../components/PhotoCapture";
 import { colors, fonts, radius, shadow } from "../../lib/theme";
 
-const rupees = (n: number) => `₹${Number(n).toLocaleString("en-IN")}`;
-
-const fmtDay = (ts: string) =>
-  new Date(ts).toLocaleDateString("en-IN", {
-    day: "numeric", month: "short", timeZone: "Asia/Kolkata",
-  });
-
-function base64ToBytes(b64: string): Uint8Array {
-  const bin = atob(b64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return bytes;
-}
-
 type PayMethod = "CASH" | "UPI" | "CARD" | "BANK" | "OTHER";
+
+type Payment = {
+  id: string;
+  sale_id: string | null;
+  amount: number;
+  method: string | null;
+  reference: string | null;
+  created_at: string;
+};
 
 const METHODS: { key: PayMethod; label: string }[] = [
   { key: "CASH", label: "Cash" },
@@ -45,7 +46,6 @@ const METHODS: { key: PayMethod; label: string }[] = [
   { key: "BANK", label: "Bank" },
 ];
 
-/** what "reference" means depends on how they paid */
 const REF_HINT: Record<PayMethod, string> = {
   CASH: "Receipt number, or who witnessed it",
   UPI: "UPI transaction ID",
@@ -54,7 +54,36 @@ const REF_HINT: Record<PayMethod, string> = {
   OTHER: "Any reference",
 };
 
-const EMPTY = {
+const rupees = (n: number) => `₹${Math.abs(Number(n)).toLocaleString("en-IN")}`;
+const fmtDay = (ts: string) =>
+  new Date(ts).toLocaleDateString("en-IN", {
+    day: "numeric", month: "short", timeZone: "Asia/Kolkata",
+  });
+const digits = (s: string) => s.replace(/[^0-9]/g, "").replace(/^0+(?=\d)/, "");
+
+/** "7 days ago", "4 weeks ago" — how long since anything happened */
+const ago = (ts: string | null): string => {
+  if (!ts) return "no activity";
+  const days = Math.floor((Date.now() - new Date(ts).getTime()) / 86400000);
+  if (days <= 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days < 7) return `${days} days ago`;
+  if (days < 30) { const w = Math.floor(days / 7); return `${w} week${w === 1 ? "" : "s"} ago`; }
+  const m = Math.floor(days / 30);
+  return `${m} month${m === 1 ? "" : "s"} ago`;
+};
+
+const initialsOf = (name: string) =>
+  name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("");
+
+function base64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+const EMPTY_BILL = {
   customer_name: "",
   customer_phone: "",
   bill_no: "",
@@ -70,40 +99,52 @@ export default function CreditTab({
   profile: Profile;
   branch: Branch;
 }) {
-  const [form, setForm] = useState(EMPTY);
-  const [photo, setPhoto] = useState<string | null>(null);
-  const [camera, setCamera] = useState(false);
+  const [customers, setCustomers] = useState<CustomerBalance[]>([]);
+  const [sales, setSales] = useState<CreditSale[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
-  const [mine, setMine] = useState<CreditSale[]>([]);
-  const [refreshing, setRefreshing] = useState(false);
 
-  // Two jobs at this counter: booking a new debt, and taking money
-  // against an old one. Taking money is the more frequent of the two
-  // once the shop has been running a while, so it opens first.
-  const [mode, setMode] = useState<"collect" | "new">("collect");
+  const [mode, setMode] = useState<"khata" | "bill">("khata");
   const [search, setSearch] = useState("");
-  const [payFor, setPayFor] = useState<CreditSale | null>(null);
-  const [payAmount, setPayAmount] = useState("");
-  const [payMethod, setPayMethod] = useState<PayMethod>("CASH");
-  const [payRef, setPayRef] = useState("");
-  const [payProof, setPayProof] = useState<string | null>(null);
+
+  // the customer whose page is open
+  const [openCustomer, setOpenCustomer] = useState<CustomerBalance | null>(null);
+
+  // money-in sheet
+  const [takingMoney, setTakingMoney] = useState(false);
+  const [amount, setAmount] = useState("");
+  const [againstSale, setAgainstSale] = useState<string>("");
+  const [method, setMethod] = useState<PayMethod>("CASH");
+  const [reference, setReference] = useState("");
+  const [proof, setProof] = useState<string | null>(null);
   const [proofCamera, setProofCamera] = useState(false);
 
-  const set = (k: keyof typeof EMPTY) => (v: string) => setForm((f) => ({ ...f, [k]: v }));
+  // new bill
+  const [bill, setBill] = useState(EMPTY_BILL);
+  const [billPhoto, setBillPhoto] = useState<string | null>(null);
+  const [billCamera, setBillCamera] = useState(false);
 
-  // Everything still owed at this shop, not only what this person
-  // filed: the customer comes back on whatever day they come back, and
-  // whoever is on the counter has to be able to find them.
   const load = useCallback(async () => {
-    const { data } = await supabase
-      .from("credit_sales")
-      .select("id, customer_name, customer_phone, bill_no, bill_amount, due_amount, paid_amount, note, settled_at, created_at")
-      .eq("branch_id", branch.id)
-      .order("created_at", { ascending: false })
-      .limit(200);
-    setMine((data as CreditSale[]) ?? []);
+    const [{ data: cust }, { data: s }, { data: p }] = await Promise.all([
+      supabase.from("customer_balances").select("*").eq("branch_id", branch.id),
+      supabase
+        .from("credit_sales")
+        .select("id, customer_id, customer_name, customer_phone, bill_no, bill_amount, due_amount, paid_amount, note, settled_at, created_at")
+        .eq("branch_id", branch.id)
+        .order("created_at", { ascending: false })
+        .limit(400),
+      supabase
+        .from("credit_payments")
+        .select("id, customer_id, sale_id, amount, method, reference, created_at")
+        .order("created_at", { ascending: false })
+        .limit(400),
+    ]);
+    setCustomers((cust as CustomerBalance[]) ?? []);
+    setSales((s as CreditSale[]) ?? []);
+    setPayments((p as unknown as (Payment & { customer_id: string })[]) ?? []);
   }, [branch.id]);
 
   useEffect(() => { load(); }, [load]);
@@ -114,205 +155,237 @@ export default function CreditTab({
     setRefreshing(false);
   };
 
-  // Digits only, and no leading zeros creeping in from a stray tap.
-  const money = (raw: string) => raw.replace(/[^0-9]/g, "").replace(/^0+(?=\d)/, "");
-
-  const billAmt = Number(form.bill_amount || 0);
-  const dueAmt = Number(form.due_amount || 0);
-  const ready =
-    form.customer_name.trim().length > 1 &&
-    billAmt > 0 &&
-    dueAmt > 0 &&
-    dueAmt <= billAmt &&
-    photo !== null;
-
-  const submit = async () => {
-    if (!ready || busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const now = new Date();
-      const path = `${branch.id}/${now.toISOString().slice(0, 7)}/${now.getTime()}.jpg`;
-
-      const { error: upErr } = await supabase.storage
-        .from("bills")
-        .upload(path, base64ToBytes(photo!).buffer as ArrayBuffer, {
-          contentType: "image/jpeg",
-          upsert: false,
-        });
-      if (upErr) throw upErr;
-
-      const hash = await Crypto.digestStringAsync(
-        Crypto.CryptoDigestAlgorithm.SHA256,
-        photo!,
-      );
-
-      const { error: insErr } = await supabase.from("credit_sales").insert({
-        branch_id: branch.id,
-        recorded_by: profile.id,
-        customer_name: form.customer_name.trim(),
-        customer_phone: form.customer_phone.trim() || null,
-        bill_no: form.bill_no.trim() || null,
-        bill_amount: billAmt,
-        due_amount: dueAmt,
-        note: form.note.trim() || null,
-        bill_path: path,
-        bill_sha256: hash,
-      });
-      if (insErr) throw insErr;
-
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setDone(`${form.customer_name.trim()} · ${rupees(dueAmt)} due recorded`);
-      setForm(EMPTY);
-      setPhoto(null);
-      await load();
-    } catch (e) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      const msg = (e as Error)?.message ?? "";
-      setError(
-        msg.toLowerCase().includes("network") || msg.toLowerCase().includes("fetch")
-          ? "No internet. Nothing was saved — please try again when you are back online."
-          : "Could not save this. Please check the details and try again.",
-      );
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const balanceOf = (c: CreditSale) => Number(c.due_amount) - Number(c.paid_amount);
-
-  const openSales = mine.filter((c) => !c.settled_at);
   const q = search.trim().toLowerCase();
-  const matches = openSales.filter(
-    (c) =>
-      !q ||
-      c.customer_name.toLowerCase().includes(q) ||
-      (c.customer_phone ?? "").includes(q) ||
-      (c.bill_no ?? "").toLowerCase().includes(q),
+  const shown = useMemo(
+    () =>
+      customers
+        .filter((c) => !q || c.name.toLowerCase().includes(q) || (c.phone ?? "").includes(q))
+        // biggest balances first — that is what gets chased
+        .sort((a, b) => Math.abs(Number(b.balance)) - Math.abs(Number(a.balance))),
+    [customers, q],
   );
 
-  // A UPI payment lives as a screenshot in the gallery, not in front of
-  // the camera, so proof can come from either place.
-  //
-  // expo-image-picker is loaded on demand rather than imported at the
-  // top: it is a native module, so an app build made before it was
-  // added does not contain it, and a top-level import would take the
-  // whole screen down on those phones instead of just this one button.
+  const owedTotal = customers.reduce(
+    (t, c) => t + (Number(c.balance) > 0 ? Number(c.balance) : 0), 0,
+  );
+  const giveTotal = customers.reduce(
+    (t, c) => t + (Number(c.balance) < 0 ? -Number(c.balance) : 0), 0,
+  );
+
+  const lastActivity = (c: CustomerBalance) => {
+    const a = c.last_bill_at, b = c.last_payment_at;
+    if (!a) return b;
+    if (!b) return a;
+    return a > b ? a : b;
+  };
+
+  const mySales = (cid: string) => sales.filter((s) => s.customer_id === cid);
+  const myPayments = (cid: string) =>
+    payments.filter((p) => (p as Payment & { customer_id: string }).customer_id === cid);
+  const openBills = (cid: string) => mySales(cid).filter((s) => !s.settled_at);
+
+  // ---------- money in ----------
   const pickProof = async () => {
     try {
+      // loaded on demand: an app build made before expo-image-picker was
+      // added does not contain it, and a top-level import would take the
+      // whole screen down on those phones rather than just this button
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const ImagePicker = require("expo-image-picker");
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) {
-        setError("Allow photo access to attach a screenshot, or use the camera instead.");
+        setError("Allow photo access to attach a screenshot, or use the camera.");
         return;
       }
       const res = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ["images"],
-        quality: 0.7,
+        mediaTypes: ["images"], quality: 0.7,
       });
       if (res.canceled || !res.assets?.[0]?.uri) return;
-      // Shrink here too: a modern phone screenshot is several megabytes
-      // and shop wifi is not fast.
       const out = await ImageManipulator.manipulateAsync(
         res.assets[0].uri,
         [{ resize: { width: 1080 } }],
         { compress: 0.6, format: ImageManipulator.SaveFormat.JPEG, base64: true },
       );
-      if (out.base64) setPayProof(out.base64);
+      if (out.base64) setProof(out.base64);
     } catch {
       setError(
-        "Choosing from photos needs the newer app version. Use Photo to take a " +
-        "picture of the payment, or type the reference number.",
+        "Choosing from photos needs the newer app version. Use Photo instead, " +
+        "or type the reference number.",
       );
     }
   };
 
-  const resetPaySheet = () => {
-    setPayFor(null);
-    setPayAmount("");
-    setPayMethod("CASH");
-    setPayRef("");
-    setPayProof(null);
+  const resetMoney = () => {
+    setTakingMoney(false);
+    setAmount("");
+    setAgainstSale("");
+    setMethod("CASH");
+    setReference("");
+    setProof(null);
   };
 
-  const takePayment = async () => {
-    if (!payFor || busy) return;
-    const amount = Number(payAmount || 0);
-    const balance = balanceOf(payFor);
-    if (amount <= 0 || amount > balance) return;
-    if (!payProof && !payRef.trim()) return;   // the database refuses this too
+  const saveMoney = async () => {
+    if (!openCustomer || busy) return;
+    const amt = Number(amount || 0);
+    if (amt <= 0) return;
 
     setBusy(true);
     setError(null);
     try {
       let proofPath: string | null = null;
       let proofHash: string | null = null;
-
-      if (payProof) {
+      if (proof) {
         const now = new Date();
         proofPath = `${branch.id}/${now.toISOString().slice(0, 7)}/${now.getTime()}.jpg`;
         const { error: upErr } = await supabase.storage
           .from("payment-proofs")
-          .upload(proofPath, base64ToBytes(payProof).buffer as ArrayBuffer, {
-            contentType: "image/jpeg",
-            upsert: false,
+          .upload(proofPath, base64ToBytes(proof).buffer as ArrayBuffer, {
+            contentType: "image/jpeg", upsert: false,
           });
         if (upErr) throw upErr;
         proofHash = await Crypto.digestStringAsync(
-          Crypto.CryptoDigestAlgorithm.SHA256,
-          payProof,
+          Crypto.CryptoDigestAlgorithm.SHA256, proof,
         );
       }
 
       const { error: err } = await supabase.from("credit_payments").insert({
-        sale_id: payFor.id,
-        amount,
+        customer_id: openCustomer.id,
+        // blank = against the account as a whole, which is what makes an
+        // advance possible when nothing is owed
+        sale_id: againstSale || null,
+        amount: amt,
         received_by: profile.id,
-        method: payMethod,
-        reference: payRef.trim() || null,
+        method,
+        reference: reference.trim() || null,
         proof_path: proofPath,
         proof_sha256: proofHash,
       });
       if (err) throw err;
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      const cleared = amount >= balance;
+      const after = Number(openCustomer.balance) - amt;
       setDone(
-        cleared
-          ? `${payFor.customer_name} has paid in full — ${rupees(amount)} received`
-          : `${rupees(amount)} received from ${payFor.customer_name}. ${rupees(balance - amount)} still due.`,
+        after < 0
+          ? `${rupees(amt)} taken — ${rupees(after)} now held as advance for ${openCustomer.name}`
+          : after === 0
+          ? `${openCustomer.name} is fully settled`
+          : `${rupees(amt)} taken — ${rupees(after)} still owed by ${openCustomer.name}`,
       );
-      resetPaySheet();
+      resetMoney();
+      setOpenCustomer(null);
       await load();
     } catch (e) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       const msg = (e as Error)?.message ?? "";
       setError(
-        msg.includes("needs proof")
-          ? "Attach a screenshot or photo, or enter a reference number."
-          : msg.includes("more than the")
-          // the database refused it — someone else took money first
-          ? "That is more than is still owed. Pull down to refresh and check the amount."
+        msg.includes("more than the")
+          ? "That is more than is left on this bill. Pull down to refresh and check."
           : msg.toLowerCase().includes("network") || msg.toLowerCase().includes("fetch")
-          ? "No internet. Nothing was saved — please try again when you are back online."
-          : "Could not record this payment. Please try again.",
+          ? "No internet. Nothing was saved — try again when you are back online."
+          : "Could not record this. Please try again.",
       );
     } finally {
       setBusy(false);
     }
   };
 
-  // The owner can withdraw the permission at any time; if that happens
-  // while the app is open, say so plainly rather than failing at submit.
+  // ---------- new bill ----------
+  const billTotal = Number(bill.bill_amount || 0);
+  const billDue = Number(bill.due_amount || 0);
+  const billReady =
+    bill.customer_name.trim().length > 1 &&
+    billTotal > 0 && billDue > 0 && billDue <= billTotal &&
+    billPhoto !== null;
+
+  // Suggest people already in the book so the same person does not end
+  // up with two pages spelled slightly differently.
+  const nameMatches = useMemo(() => {
+    const t = bill.customer_name.trim().toLowerCase();
+    if (t.length < 2) return [];
+    return customers
+      .filter((c) => c.name.toLowerCase().includes(t) && c.name.toLowerCase() !== t)
+      .slice(0, 4);
+  }, [bill.customer_name, customers]);
+
+  const saveBill = async () => {
+    if (!billReady || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const name = bill.customer_name.trim();
+      const phone = bill.customer_phone.trim() || null;
+
+      // one page per person: reuse the existing row when the name
+      // matches, otherwise open a new page
+      let customerId = customers.find(
+        (c) => c.name.trim().toLowerCase() === name.toLowerCase(),
+      )?.id;
+
+      if (!customerId) {
+        const { data: created, error: cErr } = await supabase
+          .from("customers")
+          .insert({ branch_id: branch.id, name, phone })
+          .select("id")
+          .single();
+        if (cErr) throw cErr;
+        customerId = created.id;
+      }
+
+      const now = new Date();
+      const path = `${branch.id}/${now.toISOString().slice(0, 7)}/${now.getTime()}.jpg`;
+      const { error: upErr } = await supabase.storage
+        .from("bills")
+        .upload(path, base64ToBytes(billPhoto!).buffer as ArrayBuffer, {
+          contentType: "image/jpeg", upsert: false,
+        });
+      if (upErr) throw upErr;
+
+      const hash = await Crypto.digestStringAsync(
+        Crypto.CryptoDigestAlgorithm.SHA256, billPhoto!,
+      );
+
+      const { error: insErr } = await supabase.from("credit_sales").insert({
+        branch_id: branch.id,
+        recorded_by: profile.id,
+        customer_id: customerId,
+        customer_name: name,
+        customer_phone: phone,
+        bill_no: bill.bill_no.trim() || null,
+        bill_amount: billTotal,
+        due_amount: billDue,
+        note: bill.note.trim() || null,
+        bill_path: path,
+        bill_sha256: hash,
+      });
+      if (insErr) throw insErr;
+
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setDone(`${name} · ${rupees(billDue)} added to their khata`);
+      setBill(EMPTY_BILL);
+      setBillPhoto(null);
+      setMode("khata");
+      await load();
+    } catch (e) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      const msg = (e as Error)?.message ?? "";
+      setError(
+        msg.toLowerCase().includes("network") || msg.toLowerCase().includes("fetch")
+          ? "No internet. Nothing was saved — try again when you are back online."
+          : "Could not save this bill. Please check the details and try again.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (!profile.can_bill) {
     return (
       <View style={styles.denied}>
         <Ionicons name="lock-closed-outline" size={40} color={colors.ink3} />
         <Text style={styles.deniedTitle}>Not switched on for you</Text>
         <Text style={styles.deniedBody}>
-          Recording credit customers is turned on by the owner for whoever is on
-          the billing counter. Ask the owner if this should be you.
+          The credit book is turned on by the owner for whoever is on the billing
+          counter. Ask the owner if this should be you.
         </Text>
       </View>
     );
@@ -330,28 +403,37 @@ export default function CreditTab({
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
         }
       >
-        <Text style={styles.h1}>Credit</Text>
-        <Text style={styles.sub}>
-          {mode === "collect"
-            ? "Take money from a customer who owes"
-            : "Record a customer taking clothes on due"}
-        </Text>
+        <Text style={styles.h1}>Credit book</Text>
+
+        {/* The same two figures the owner sees on the website, so the
+            counter and the office are reading one number each way. */}
+        <View style={[styles.summary, shadow.card]}>
+          <View style={styles.sumHalf}>
+            <Text style={styles.sumLabel}>You will give</Text>
+            <Text style={styles.sumGive}>{giveTotal === 0 ? "₹0" : rupees(giveTotal)}</Text>
+          </View>
+          <View style={styles.sumDivider} />
+          <View style={styles.sumHalf}>
+            <Text style={styles.sumLabel}>You will get</Text>
+            <Text style={styles.sumGet}>{owedTotal === 0 ? "₹0" : rupees(owedTotal)}</Text>
+          </View>
+        </View>
 
         <View style={styles.segment}>
           <TouchableOpacity
-            style={[styles.segBtn, mode === "collect" && styles.segOn]}
-            onPress={() => setMode("collect")}
+            style={[styles.segBtn, mode === "khata" && styles.segOn]}
+            onPress={() => setMode("khata")}
           >
-            <Text style={[styles.segText, mode === "collect" && styles.segTextOn]}>
-              Take payment{openSales.length > 0 ? ` (${openSales.length})` : ""}
+            <Text style={[styles.segText, mode === "khata" && styles.segTextOn]}>
+              Customers ({customers.length})
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.segBtn, mode === "new" && styles.segOn]}
-            onPress={() => setMode("new")}
+            style={[styles.segBtn, mode === "bill" && styles.segOn]}
+            onPress={() => setMode("bill")}
           >
-            <Text style={[styles.segText, mode === "new" && styles.segTextOn]}>
-              New credit
+            <Text style={[styles.segText, mode === "bill" && styles.segTextOn]}>
+              New bill
             </Text>
           </TouchableOpacity>
         </View>
@@ -367,226 +449,313 @@ export default function CreditTab({
           </TouchableOpacity>
         )}
 
-        {mode === "collect" ? (
+        {mode === "khata" ? (
           <>
             <TextInput
               style={styles.search}
               value={search}
               onChangeText={setSearch}
-              placeholder="Search name, phone or bill number"
+              placeholder="Search customer name or phone"
               placeholderTextColor={colors.ink3}
             />
 
-            {matches.length === 0 && (
+            {shown.length === 0 && (
               <View style={[styles.card, shadow.card]}>
                 <Text style={styles.emptyText}>
-                  {openSales.length === 0
-                    ? "Nobody owes anything right now."
+                  {customers.length === 0
+                    ? "No customers in the book yet. Add a bill to start one."
                     : "No customer matches that search."}
                 </Text>
               </View>
             )}
 
-            {matches.map((c) => {
-              const balance = balanceOf(c);
-              const part = Number(c.paid_amount) > 0;
+            {/* Name and amount only — everything else is on their page */}
+            {shown.map((c) => {
+              const bal = Number(c.balance);
               return (
                 <TouchableOpacity
                   key={c.id}
-                  style={[styles.entry, shadow.card]}
-                  onPress={() => {
-                    setPayFor(c);
-                    setPayAmount(String(balance));   // usually they clear it
-                    setError(null);
-                  }}
+                  style={[styles.row, shadow.card]}
+                  onPress={() => { setOpenCustomer(c); setAgainstSale(""); }}
                   activeOpacity={0.7}
                 >
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.entryName}>{c.customer_name}</Text>
-                    <Text style={styles.entryMeta}>
-                      {fmtDay(c.created_at)}
-                      {c.customer_phone ? ` · ${c.customer_phone}` : ""}
-                      {c.bill_no ? ` · bill ${c.bill_no}` : ""}
-                    </Text>
-                    {part && (
-                      <Text style={styles.entryPart}>
-                        {rupees(Number(c.paid_amount))} of {rupees(Number(c.due_amount))} paid
-                      </Text>
-                    )}
+                  <View style={styles.avatar}>
+                    <Text style={styles.avatarText}>{initialsOf(c.name)}</Text>
                   </View>
-                  <View style={styles.entryRight}>
-                    <Text style={styles.entryDue}>{rupees(balance)}</Text>
-                    <Text style={styles.entryState}>owed</Text>
+                  <View style={styles.rowWho}>
+                    <Text style={styles.rowName} numberOfLines={1}>{c.name}</Text>
+                    <Text style={styles.rowAgo}>{ago(lastActivity(c))}</Text>
+                  </View>
+                  <View style={styles.rowRight}>
+                    <Text style={[
+                      styles.rowAmt,
+                      bal > 0 && styles.owed,
+                      bal < 0 && styles.advance,
+                      bal === 0 && styles.clear,
+                    ]}>
+                      {bal === 0 ? "₹0" : rupees(bal)}
+                    </Text>
+                    <Text style={styles.rowDir}>
+                      {bal > 0 ? "you will get" : bal < 0 ? "you will give" : "settled"}
+                    </Text>
                   </View>
                 </TouchableOpacity>
               );
             })}
           </>
         ) : (
-        <View style={[styles.card, shadow.card]}>
-          <Text style={styles.label}>Customer name</Text>
-          <TextInput
-            style={styles.input}
-            value={form.customer_name}
-            onChangeText={set("customer_name")}
-            placeholder="Full name"
-            placeholderTextColor={colors.ink3}
-          />
-
-          <Text style={styles.label}>Phone number</Text>
-          <TextInput
-            style={styles.input}
-            value={form.customer_phone}
-            onChangeText={(v) => set("customer_phone")(v.replace(/[^0-9]/g, ""))}
-            placeholder="10-digit number"
-            placeholderTextColor={colors.ink3}
-            keyboardType="number-pad"
-            maxLength={10}
-          />
-
-          <Text style={styles.label}>Bill number (optional)</Text>
-          <TextInput
-            style={styles.input}
-            value={form.bill_no}
-            onChangeText={set("bill_no")}
-            placeholder="As printed on the bill"
-            placeholderTextColor={colors.ink3}
-          />
-
-          <View style={styles.row}>
-            <View style={styles.half}>
-              <Text style={styles.label}>Bill total (₹)</Text>
-              <TextInput
-                style={styles.input}
-                value={form.bill_amount}
-                onChangeText={(v) => set("bill_amount")(money(v))}
-                placeholder="0"
-                placeholderTextColor={colors.ink3}
-                keyboardType="number-pad"
-              />
-            </View>
-            <View style={styles.half}>
-              <Text style={styles.label}>Taken on due (₹)</Text>
-              <TextInput
-                style={styles.input}
-                value={form.due_amount}
-                onChangeText={(v) => set("due_amount")(money(v))}
-                placeholder="0"
-                placeholderTextColor={colors.ink3}
-                keyboardType="number-pad"
-              />
-            </View>
-          </View>
-          {billAmt > 0 && dueAmt > billAmt && (
-            <Text style={styles.warn}>
-              The due amount cannot be more than the bill total.
-            </Text>
-          )}
-          {billAmt > 0 && dueAmt > 0 && dueAmt <= billAmt && dueAmt < billAmt && (
-            <Text style={styles.hint}>
-              Paid now: {rupees(billAmt - dueAmt)}
-            </Text>
-          )}
-
-          <Text style={styles.label}>Note (optional)</Text>
-          <TextInput
-            style={[styles.input, styles.multiline]}
-            value={form.note}
-            onChangeText={set("note")}
-            placeholder="Anything the owner should know"
-            placeholderTextColor={colors.ink3}
-            multiline
-          />
-
-          <TouchableOpacity
-            style={[styles.photoBtn, photo && styles.photoBtnDone]}
-            onPress={() => setCamera(true)}
-          >
-            <Ionicons
-              name={photo ? "checkmark-circle" : "camera-outline"}
-              size={20}
-              color={photo ? colors.good : colors.accent}
+          <View style={[styles.card, shadow.card]}>
+            <Text style={styles.label}>Customer name</Text>
+            <TextInput
+              style={styles.input}
+              value={bill.customer_name}
+              onChangeText={(v) => setBill((b) => ({ ...b, customer_name: v }))}
+              placeholder="Full name"
+              placeholderTextColor={colors.ink3}
             />
-            <Text style={[styles.photoText, photo && styles.photoTextDone]}>
-              {photo ? "Bill photo taken — tap to retake" : "Take a photo of the bill"}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.submit, !ready && styles.submitOff]}
-            onPress={submit}
-            disabled={!ready || busy}
-          >
-            {busy ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.submitText}>Save credit entry</Text>
+            {nameMatches.length > 0 && (
+              <View style={styles.suggest}>
+                <Text style={styles.suggestHead}>Already in the book — tap to use</Text>
+                {nameMatches.map((c) => (
+                  <TouchableOpacity
+                    key={c.id}
+                    style={styles.suggestItem}
+                    onPress={() =>
+                      setBill((b) => ({
+                        ...b,
+                        customer_name: c.name,
+                        customer_phone: c.phone ?? b.customer_phone,
+                      }))
+                    }
+                  >
+                    <Text style={styles.suggestName}>{c.name}</Text>
+                    <Text style={styles.suggestBal}>
+                      {Number(c.balance) > 0 ? `${rupees(c.balance)} owed` : "settled"}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
             )}
-          </TouchableOpacity>
-          {!ready && !busy && (
-            <Text style={styles.needs}>
-              Name, both amounts and a photo of the bill are needed.
-            </Text>
-          )}
-        </View>
+
+            <Text style={styles.label}>Phone number</Text>
+            <TextInput
+              style={styles.input}
+              value={bill.customer_phone}
+              onChangeText={(v) => setBill((b) => ({ ...b, customer_phone: digits(v) }))}
+              placeholder="10-digit number"
+              placeholderTextColor={colors.ink3}
+              keyboardType="number-pad"
+              maxLength={10}
+            />
+
+            <Text style={styles.label}>Bill number (optional)</Text>
+            <TextInput
+              style={styles.input}
+              value={bill.bill_no}
+              onChangeText={(v) => setBill((b) => ({ ...b, bill_no: v }))}
+              placeholder="As printed on the bill"
+              placeholderTextColor={colors.ink3}
+            />
+
+            <View style={styles.two}>
+              <View style={styles.half}>
+                <Text style={styles.label}>Bill total (₹)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={bill.bill_amount}
+                  onChangeText={(v) => setBill((b) => ({ ...b, bill_amount: digits(v) }))}
+                  keyboardType="number-pad"
+                  placeholder="0"
+                  placeholderTextColor={colors.ink3}
+                />
+              </View>
+              <View style={styles.half}>
+                <Text style={styles.label}>Taken on due (₹)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={bill.due_amount}
+                  onChangeText={(v) => setBill((b) => ({ ...b, due_amount: digits(v) }))}
+                  keyboardType="number-pad"
+                  placeholder="0"
+                  placeholderTextColor={colors.ink3}
+                />
+              </View>
+            </View>
+            {billTotal > 0 && billDue > billTotal && (
+              <Text style={styles.warn}>The due amount cannot be more than the bill total.</Text>
+            )}
+            {billTotal > 0 && billDue > 0 && billDue < billTotal && (
+              <Text style={styles.hint}>Paid now: {rupees(billTotal - billDue)}</Text>
+            )}
+
+            <Text style={styles.label}>Note (optional)</Text>
+            <TextInput
+              style={[styles.input, styles.multiline]}
+              value={bill.note}
+              onChangeText={(v) => setBill((b) => ({ ...b, note: v }))}
+              placeholder="Anything the owner should know"
+              placeholderTextColor={colors.ink3}
+              multiline
+            />
+
+            <TouchableOpacity
+              style={[styles.photoBtn, billPhoto && styles.photoBtnDone]}
+              onPress={() => setBillCamera(true)}
+            >
+              <Ionicons
+                name={billPhoto ? "checkmark-circle" : "camera-outline"}
+                size={20}
+                color={billPhoto ? colors.good : colors.accent}
+              />
+              <Text style={[styles.photoText, billPhoto && styles.photoTextDone]}>
+                {billPhoto ? "Bill photo taken — tap to retake" : "Take a photo of the bill"}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.submit, !billReady && styles.submitOff]}
+              onPress={saveBill}
+              disabled={!billReady || busy}
+            >
+              {busy ? <ActivityIndicator color="#fff" />
+                : <Text style={styles.submitText}>Add to khata</Text>}
+            </TouchableOpacity>
+            {!billReady && !busy && (
+              <Text style={styles.needs}>
+                Name, both amounts and a photo of the bill are needed.
+              </Text>
+            )}
+          </View>
         )}
       </ScrollView>
 
-      {/* Taking the money. Deliberately a small, deliberate step of its
-          own rather than a button on the row — this is cash changing
-          hands, and the amount should be looked at before it is booked. */}
-      {payFor && (
+      {/* ---------- a customer's page ---------- */}
+      {openCustomer && !takingMoney && (
         <View style={styles.sheetWrap}>
           <TouchableOpacity
             style={styles.sheetBackdrop}
             activeOpacity={1}
-            onPress={resetPaySheet}
+            onPress={() => setOpenCustomer(null)}
           />
-          <ScrollView
-            style={[styles.sheet, shadow.card]}
-            contentContainerStyle={styles.sheetInner}
-            keyboardShouldPersistTaps="handled"
-          >
-            <Text style={styles.sheetName}>{payFor.customer_name}</Text>
+          <ScrollView style={[styles.sheet, shadow.card]} contentContainerStyle={styles.sheetInner}>
+            <Text style={styles.sheetName}>{openCustomer.name}</Text>
             <Text style={styles.sheetMeta}>
-              {rupees(balanceOf(payFor))} still owed
-              {Number(payFor.paid_amount) > 0
-                ? ` · ${rupees(Number(payFor.paid_amount))} already paid`
-                : ""}
+              {openCustomer.phone ?? "no phone"}
+              {" · "}
+              {Number(openCustomer.balance) > 0
+                ? `${rupees(openCustomer.balance)} owed`
+                : Number(openCustomer.balance) < 0
+                ? `${rupees(openCustomer.balance)} advance held`
+                : "settled"}
+            </Text>
+
+            <TouchableOpacity
+              style={styles.submit}
+              onPress={() => {
+                setTakingMoney(true);
+                const bal = Number(openCustomer.balance);
+                setAmount(bal > 0 ? String(bal) : "");
+              }}
+            >
+              <Text style={styles.submitText}>Take money</Text>
+            </TouchableOpacity>
+
+            <Text style={styles.sectionHead}>Bills taken</Text>
+            {mySales(openCustomer.id).length === 0 && (
+              <Text style={styles.muted}>No bills recorded.</Text>
+            )}
+            {mySales(openCustomer.id).map((s) => (
+              <View style={styles.histLine} key={s.id}>
+                <Text style={styles.histDate}>{fmtDay(s.created_at)}</Text>
+                <Text style={[styles.histAmt, styles.owed]}>{rupees(s.due_amount)}</Text>
+                <Text style={styles.histMeta} numberOfLines={1}>
+                  {s.bill_no ? `bill ${s.bill_no}` : "no bill no."}
+                  {s.settled_at ? " · paid" : ""}
+                </Text>
+              </View>
+            ))}
+
+            <Text style={styles.sectionHead}>Money received</Text>
+            {myPayments(openCustomer.id).length === 0 && (
+              <Text style={styles.muted}>Nothing paid yet.</Text>
+            )}
+            {myPayments(openCustomer.id).map((p) => (
+              <View style={styles.histLine} key={p.id}>
+                <Text style={styles.histDate}>{fmtDay(p.created_at)}</Text>
+                <Text style={[styles.histAmt, styles.advance]}>{rupees(p.amount)}</Text>
+                <Text style={styles.histMeta} numberOfLines={1}>
+                  {p.method ?? ""}{p.sale_id ? "" : " · on account"}
+                </Text>
+              </View>
+            ))}
+
+            <TouchableOpacity style={styles.sheetCancel} onPress={() => setOpenCustomer(null)}>
+              <Text style={styles.sheetCancelText}>Close</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      )}
+
+      {/* ---------- taking money ---------- */}
+      {openCustomer && takingMoney && (
+        <View style={styles.sheetWrap}>
+          <TouchableOpacity style={styles.sheetBackdrop} activeOpacity={1} onPress={resetMoney} />
+          <ScrollView style={[styles.sheet, shadow.card]} contentContainerStyle={styles.sheetInner}>
+            <Text style={styles.sheetName}>{openCustomer.name}</Text>
+            <Text style={styles.sheetMeta}>
+              {Number(openCustomer.balance) > 0
+                ? `${rupees(openCustomer.balance)} owed`
+                : "Nothing owed — this will be kept as an advance"}
             </Text>
 
             <Text style={styles.label}>Amount received (₹)</Text>
             <TextInput
               style={styles.input}
-              value={payAmount}
-              onChangeText={(v) => setPayAmount(money(v))}
+              value={amount}
+              onChangeText={(v) => setAmount(digits(v))}
               keyboardType="number-pad"
               placeholder="0"
               placeholderTextColor={colors.ink3}
             />
-            {Number(payAmount || 0) > balanceOf(payFor) && (
-              <Text style={styles.warn}>
-                That is more than the {rupees(balanceOf(payFor))} still owed.
+            {Number(amount || 0) > 0 && Number(amount) > Number(openCustomer.balance) && (
+              <Text style={styles.hint}>
+                {rupees(Number(amount) - Number(openCustomer.balance))} of this will be held
+                as an advance.
               </Text>
             )}
-            {Number(payAmount || 0) > 0 &&
-              Number(payAmount) < balanceOf(payFor) && (
-                <Text style={styles.hint}>
-                  {rupees(balanceOf(payFor) - Number(payAmount))} will still be due.
+
+            <Text style={styles.label}>Against</Text>
+            <View style={styles.chips}>
+              <TouchableOpacity
+                style={[styles.chip, againstSale === "" && styles.chipOn]}
+                onPress={() => setAgainstSale("")}
+              >
+                <Text style={[styles.chipText, againstSale === "" && styles.chipTextOn]}>
+                  Whole account
                 </Text>
-              )}
+              </TouchableOpacity>
+              {openBills(openCustomer.id).map((s) => (
+                <TouchableOpacity
+                  key={s.id}
+                  style={[styles.chip, againstSale === s.id && styles.chipOn]}
+                  onPress={() => setAgainstSale(s.id)}
+                >
+                  <Text style={[styles.chipText, againstSale === s.id && styles.chipTextOn]}>
+                    {fmtDay(s.created_at)} · {rupees(Number(s.due_amount) - Number(s.paid_amount))}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
 
             <Text style={styles.label}>How did they pay?</Text>
-            <View style={styles.methods}>
+            <View style={styles.chips}>
               {METHODS.map((m) => (
                 <TouchableOpacity
                   key={m.key}
-                  style={[styles.method, payMethod === m.key && styles.methodOn]}
-                  onPress={() => setPayMethod(m.key)}
+                  style={[styles.chip, method === m.key && styles.chipOn]}
+                  onPress={() => setMethod(m.key)}
                 >
-                  <Text
-                    style={[styles.methodText, payMethod === m.key && styles.methodTextOn]}
-                  >
+                  <Text style={[styles.chipText, method === m.key && styles.chipTextOn]}>
                     {m.label}
                   </Text>
                 </TouchableOpacity>
@@ -596,76 +765,52 @@ export default function CreditTab({
             <Text style={styles.label}>Reference</Text>
             <TextInput
               style={styles.input}
-              value={payRef}
-              onChangeText={setPayRef}
-              placeholder={REF_HINT[payMethod]}
+              value={reference}
+              onChangeText={setReference}
+              placeholder={REF_HINT[method]}
               placeholderTextColor={colors.ink3}
               autoCapitalize="characters"
             />
 
-            {/* Proof of the money, not of the goods. A UPI payment is a
-                screenshot already on the phone; cash is a photo of the
-                signed receipt. Either satisfies the rule, and so does a
-                written reference on its own. */}
             <View style={styles.proofRow}>
               <TouchableOpacity style={styles.proofBtn} onPress={pickProof}>
                 <Ionicons name="images-outline" size={18} color={colors.accent} />
                 <Text style={styles.proofText}>Screenshot</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.proofBtn}
-                onPress={() => setProofCamera(true)}
-              >
+              <TouchableOpacity style={styles.proofBtn} onPress={() => setProofCamera(true)}>
                 <Ionicons name="camera-outline" size={18} color={colors.accent} />
                 <Text style={styles.proofText}>Photo</Text>
               </TouchableOpacity>
             </View>
 
-            {payProof && (
+            {proof && (
               <View style={styles.proofDone}>
                 <Ionicons name="checkmark-circle" size={18} color={colors.good} />
                 <Text style={styles.proofDoneText}>Proof attached</Text>
-                <TouchableOpacity onPress={() => setPayProof(null)}>
+                <TouchableOpacity onPress={() => setProof(null)}>
                   <Text style={styles.proofRemove}>Remove</Text>
                 </TouchableOpacity>
               </View>
             )}
-
-            {!payProof && !payRef.trim() && (
+            {!proof && !reference.trim() && (
+              // Encouraged, never required: at a counter taking cash there
+              // is often no screenshot to attach and no reference to type,
+              // and refusing the entry would leave money unrecorded.
               <Text style={styles.needs}>
-                Attach a screenshot or photo, or type a reference number.
+                Proof is optional — attach one if you have it, so the owner can
+                check this later.
               </Text>
             )}
 
             <TouchableOpacity
-              style={[
-                styles.submit,
-                (Number(payAmount || 0) <= 0 ||
-                  Number(payAmount) > balanceOf(payFor) ||
-                  (!payProof && !payRef.trim())) && styles.submitOff,
-              ]}
-              onPress={takePayment}
-              disabled={
-                busy ||
-                Number(payAmount || 0) <= 0 ||
-                Number(payAmount) > balanceOf(payFor) ||
-                (!payProof && !payRef.trim())
-              }
+              style={[styles.submit, Number(amount || 0) <= 0 && styles.submitOff]}
+              onPress={saveMoney}
+              disabled={busy || Number(amount || 0) <= 0}
             >
-              {busy ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.submitText}>
-                  {Number(payAmount || 0) >= balanceOf(payFor)
-                    ? "Received in full"
-                    : "Record payment"}
-                </Text>
-              )}
+              {busy ? <ActivityIndicator color="#fff" />
+                : <Text style={styles.submitText}>Record</Text>}
             </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.sheetCancel}
-              onPress={resetPaySheet}
-            >
+            <TouchableOpacity style={styles.sheetCancel} onPress={resetMoney}>
               <Text style={styles.sheetCancelText}>Cancel</Text>
             </TouchableOpacity>
           </ScrollView>
@@ -680,26 +825,20 @@ export default function CreditTab({
         askBody="A photo of the receipt, or of the payment on the customer's phone, so the owner can check what came in."
         allowSkip={false}
         width={1080}
-        onDone={(b64) => {
-          setProofCamera(false);
-          if (b64) setPayProof(b64);
-        }}
+        onDone={(b64) => { setProofCamera(false); if (b64) setProof(b64); }}
         onCancel={() => setProofCamera(false)}
       />
 
       <PhotoCapture
-        visible={camera}
+        visible={billCamera}
         facing="back"
         hint="Fit the whole bill in the frame"
         askTitle="Photo of the bill"
         askBody="The bill photo is the proof of what the customer owes. It is kept until the owner marks the amount paid."
         allowSkip={false}
         width={1280}
-        onDone={(b64) => {
-          setCamera(false);
-          if (b64) setPhoto(b64);
-        }}
-        onCancel={() => setCamera(false)}
+        onDone={(b64) => { setBillCamera(false); if (b64) setBillPhoto(b64); }}
+        onCancel={() => setBillCamera(false)}
       />
     </KeyboardAvoidingView>
   );
@@ -709,7 +848,59 @@ const styles = StyleSheet.create({
   scroll: { padding: 20, paddingTop: 58, paddingBottom: 40 },
   h1: { fontFamily: fonts.extra, fontSize: 26, color: colors.ink },
   sub: { fontFamily: fonts.regular, fontSize: 14, color: colors.ink2, marginTop: 2, marginBottom: 16 },
-  h2: { fontFamily: fonts.extra, fontSize: 17, color: colors.ink, marginTop: 26, marginBottom: 10 },
+
+  segment: {
+    flexDirection: "row", gap: 8, marginBottom: 14,
+    backgroundColor: colors.surface, borderRadius: radius.md, padding: 4,
+    borderWidth: 1, borderColor: colors.line,
+  },
+  segBtn: { flex: 1, paddingVertical: 10, borderRadius: radius.sm, alignItems: "center" },
+  segOn: { backgroundColor: colors.accent },
+  segText: { fontFamily: fonts.bold, fontSize: 14, color: colors.ink2 },
+  segTextOn: { color: "#fff" },
+
+  search: {
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.line, borderRadius: radius.md,
+    paddingHorizontal: 14, paddingVertical: 12,
+    fontFamily: fonts.regular, fontSize: 15, color: colors.ink, marginBottom: 12,
+  },
+
+  row: {
+    flexDirection: "row", alignItems: "center", gap: 12,
+    backgroundColor: colors.surface, borderRadius: radius.md,
+    paddingVertical: 15, paddingHorizontal: 16, marginBottom: 8,
+  },
+  summary: {
+    flexDirection: "row", alignItems: "stretch",
+    backgroundColor: colors.surface, borderRadius: radius.md,
+    marginTop: 12, marginBottom: 16, overflow: "hidden",
+  },
+  sumHalf: { flex: 1, padding: 16, gap: 2 },
+  sumDivider: { width: 1, backgroundColor: colors.line, marginVertical: 12 },
+  sumLabel: { fontFamily: fonts.regular, fontSize: 12.5, color: colors.ink2 },
+  sumGive: { fontFamily: fonts.extra, fontSize: 22, color: colors.good, fontVariant: ["tabular-nums"] },
+  sumGet: { fontFamily: fonts.extra, fontSize: 22, color: colors.accent, fontVariant: ["tabular-nums"] },
+
+  avatar: {
+    width: 38, height: 38, borderRadius: 19,
+    alignItems: "center", justifyContent: "center",
+    backgroundColor: colors.bg, borderWidth: 1, borderColor: colors.line,
+  },
+  avatarText: { fontFamily: fonts.bold, fontSize: 13, color: colors.ink2 },
+  rowWho: { flex: 1, gap: 1 },
+  rowAgo: { fontFamily: fonts.regular, fontSize: 12, color: colors.ink3 },
+  rowDir: { fontFamily: fonts.regular, fontSize: 10.5, color: colors.ink3, marginTop: 1 },
+  rowName: { fontFamily: fonts.bold, fontSize: 15.5, color: colors.ink },
+  rowRight: { alignItems: "flex-end" },
+  rowAmt: { fontFamily: fonts.extra, fontSize: 16, fontVariant: ["tabular-nums"] },
+  owed: { color: colors.accent },
+  advance: { color: colors.good },
+  clear: { color: colors.ink3 },
+  advTag: {
+    fontFamily: fonts.bold, fontSize: 10, color: colors.good,
+    textTransform: "uppercase", letterSpacing: 0.5, marginTop: 1,
+  },
 
   card: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: 18, gap: 4 },
   label: { fontFamily: fonts.bold, fontSize: 13, color: colors.ink2, marginTop: 12 },
@@ -717,20 +908,35 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
     borderWidth: 1, borderColor: colors.line, borderRadius: radius.md,
     paddingHorizontal: 14, paddingVertical: 12,
-    fontFamily: fonts.regular, fontSize: 16, color: colors.ink,
-    marginTop: 5,
+    fontFamily: fonts.regular, fontSize: 16, color: colors.ink, marginTop: 5,
   },
   multiline: { minHeight: 68, textAlignVertical: "top" },
-  row: { flexDirection: "row", gap: 12 },
+  two: { flexDirection: "row", gap: 12 },
   half: { flex: 1 },
   warn: { fontFamily: fonts.bold, fontSize: 13, color: colors.serious, marginTop: 8 },
   hint: { fontFamily: fonts.regular, fontSize: 13, color: colors.ink2, marginTop: 8 },
+  muted: { fontFamily: fonts.regular, fontSize: 13.5, color: colors.ink3, marginTop: 4 },
+  emptyText: {
+    fontFamily: fonts.regular, fontSize: 15, color: colors.ink2,
+    textAlign: "center", paddingVertical: 10,
+  },
+
+  suggest: {
+    backgroundColor: colors.bg, borderRadius: radius.md, padding: 10, marginTop: 8,
+    borderWidth: 1, borderColor: colors.line,
+  },
+  suggestHead: { fontFamily: fonts.bold, fontSize: 12, color: colors.ink3, marginBottom: 6 },
+  suggestItem: {
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+    paddingVertical: 8,
+  },
+  suggestName: { fontFamily: fonts.bold, fontSize: 14.5, color: colors.ink, flex: 1 },
+  suggestBal: { fontFamily: fonts.regular, fontSize: 13, color: colors.ink2 },
 
   photoBtn: {
     flexDirection: "row", alignItems: "center", gap: 10,
     borderWidth: 1.5, borderColor: colors.accent, borderStyle: "dashed",
-    borderRadius: radius.md, paddingVertical: 14, paddingHorizontal: 14,
-    marginTop: 18,
+    borderRadius: radius.md, paddingVertical: 14, paddingHorizontal: 14, marginTop: 18,
   },
   photoBtnDone: { borderColor: colors.good, borderStyle: "solid" },
   photoText: { fontFamily: fonts.bold, fontSize: 15, color: colors.accent, flex: 1 },
@@ -747,57 +953,15 @@ const styles = StyleSheet.create({
     textAlign: "center", marginTop: 8,
   },
 
-  entry: {
-    flexDirection: "row", alignItems: "center", gap: 12,
-    backgroundColor: colors.surface, borderRadius: radius.md,
-    padding: 14, marginBottom: 8,
-  },
-  segment: {
-    flexDirection: "row", gap: 8, marginBottom: 16,
-    backgroundColor: colors.surface, borderRadius: radius.md, padding: 4,
-    borderWidth: 1, borderColor: colors.line,
-  },
-  segBtn: { flex: 1, paddingVertical: 10, borderRadius: radius.sm, alignItems: "center" },
-  segOn: { backgroundColor: colors.accent },
-  segText: { fontFamily: fonts.bold, fontSize: 14, color: colors.ink2 },
-  segTextOn: { color: "#fff" },
-
-  search: {
-    backgroundColor: colors.surface,
-    borderWidth: 1, borderColor: colors.line, borderRadius: radius.md,
-    paddingHorizontal: 14, paddingVertical: 12,
-    fontFamily: fonts.regular, fontSize: 15, color: colors.ink,
-    marginBottom: 12,
-  },
-  emptyText: {
-    fontFamily: fonts.regular, fontSize: 15, color: colors.ink2,
-    textAlign: "center", paddingVertical: 10,
-  },
-  entryPart: { fontFamily: fonts.regular, fontSize: 12.5, color: colors.good, marginTop: 3 },
-
-  sheetWrap: {
-    position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
-    justifyContent: "flex-end",
-  },
-  sheetBackdrop: {
-    position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: "rgba(0,0,0,0.4)",
-  },
-  sheet: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg,
-    padding: 22, paddingBottom: 34, gap: 2,
-  },
-  sheetInner: { paddingBottom: 8 },
-  methods: { flexDirection: "row", gap: 8, marginTop: 6, flexWrap: "wrap" },
-  method: {
-    paddingVertical: 9, paddingHorizontal: 16,
+  chips: { flexDirection: "row", gap: 8, flexWrap: "wrap", marginTop: 6 },
+  chip: {
+    paddingVertical: 9, paddingHorizontal: 14,
     borderRadius: radius.pill, borderWidth: 1, borderColor: colors.line2,
     backgroundColor: colors.bg,
   },
-  methodOn: { backgroundColor: colors.accent, borderColor: colors.accent },
-  methodText: { fontFamily: fonts.bold, fontSize: 14, color: colors.ink2 },
-  methodTextOn: { color: "#fff" },
+  chipOn: { backgroundColor: colors.accent, borderColor: colors.accent },
+  chipText: { fontFamily: fonts.bold, fontSize: 13.5, color: colors.ink2 },
+  chipTextOn: { color: "#fff" },
 
   proofRow: { flexDirection: "row", gap: 10, marginTop: 16 },
   proofBtn: {
@@ -814,31 +978,43 @@ const styles = StyleSheet.create({
   proofDoneText: { fontFamily: fonts.bold, fontSize: 14, color: colors.good, flex: 1 },
   proofRemove: { fontFamily: fonts.bold, fontSize: 13, color: colors.ink3 },
 
+  sheetWrap: {
+    position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+    justifyContent: "flex-end",
+  },
+  sheetBackdrop: {
+    position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.4)",
+  },
+  sheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg,
+    maxHeight: "86%",
+  },
+  sheetInner: { padding: 22, paddingBottom: 34 },
   sheetName: { fontFamily: fonts.extra, fontSize: 20, color: colors.ink },
   sheetMeta: { fontFamily: fonts.regular, fontSize: 14, color: colors.ink2, marginTop: 2 },
-  sheetCancel: { paddingVertical: 12, alignItems: "center", marginTop: 4 },
+  sheetCancel: { paddingVertical: 14, alignItems: "center", marginTop: 4 },
   sheetCancelText: { fontFamily: fonts.bold, fontSize: 15, color: colors.ink3 },
 
-  entryName: { fontFamily: fonts.bold, fontSize: 15, color: colors.ink },
-  entryMeta: { fontFamily: fonts.regular, fontSize: 12.5, color: colors.ink3, marginTop: 2 },
-  entryRight: { alignItems: "flex-end" },
-  entryDue: { fontFamily: fonts.extra, fontSize: 16, color: colors.ink },
-  entryState: { fontFamily: fonts.bold, fontSize: 12, color: colors.accent, marginTop: 2 },
-  entryPaid: { color: colors.good },
+  sectionHead: {
+    fontFamily: fonts.bold, fontSize: 12, color: colors.ink3,
+    textTransform: "uppercase", letterSpacing: 0.6, marginTop: 22, marginBottom: 6,
+  },
+  histLine: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: colors.line,
+  },
+  histDate: { fontFamily: fonts.regular, fontSize: 13, color: colors.ink2, width: 66 },
+  histAmt: { fontFamily: fonts.bold, fontSize: 14.5, width: 92, fontVariant: ["tabular-nums"] },
+  histMeta: { fontFamily: fonts.regular, fontSize: 12.5, color: colors.ink3, flex: 1 },
 
-  err: {
-    backgroundColor: colors.seriousBg, borderRadius: radius.md, padding: 14, marginBottom: 12,
-  },
+  err: { backgroundColor: colors.seriousBg, borderRadius: radius.md, padding: 14, marginBottom: 12 },
   errText: { fontFamily: fonts.bold, fontSize: 14, color: colors.serious },
-  ok: {
-    backgroundColor: colors.goodBg, borderRadius: radius.md, padding: 14, marginBottom: 12,
-  },
+  ok: { backgroundColor: colors.goodBg, borderRadius: radius.md, padding: 14, marginBottom: 12 },
   okText: { fontFamily: fonts.bold, fontSize: 14, color: colors.good },
 
-  denied: {
-    flex: 1, alignItems: "center", justifyContent: "center",
-    padding: 32, gap: 10,
-  },
+  denied: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32, gap: 10 },
   deniedTitle: { fontFamily: fonts.extra, fontSize: 19, color: colors.ink },
   deniedBody: {
     fontFamily: fonts.regular, fontSize: 15, lineHeight: 21,
