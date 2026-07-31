@@ -7,7 +7,14 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.agamani.staff",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Attendance check-in only works when you are at the shop, so the app needs your location at that moment.",
+        "NSCameraUsageDescription": "A quick photo at check-in confirms you are at the shop when the location check is unclear, and the counter uses the camera to photograph bills and payment receipts.",
+        "NSPhotoLibraryUsageDescription": "Pick a payment screenshot from your photos as proof that a customer has paid.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.agamani.staff",

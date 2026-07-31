@@ -1,14 +1,19 @@
-// Home tab — the worker's day, as four steps.
+// Home tab — the worker's day, as four taps of one button.
 //
-//   1 CHECK IN        arrival
-//   2 LUNCH BREAK     out for the one-hour break (or CHECK OUT to go home)
-//   3 BACK FROM LUNCH return to the floor
-//   4 CHECK OUT       going home
+//   1 CHECK IN          arrival
+//   2 GOING FOR LUNCH   out for the break
+//   3 BACK FROM LUNCH   return to the floor
+//   4 CHECK OUT         going home
 //
-// After the fourth the day is closed. Modelling it as named stages
-// rather than an IN/OUT toggle is what lets the app say exactly what
-// the next tap will do — and stops the lunch hour being counted as
-// time on the floor.
+// One button, walking the day in order. It used to be a main button
+// plus a separate lunch button, which asked the worker to decide which
+// control applied to them — the wrong question to put to someone
+// holding a phone at the shop door. Now the button always says exactly
+// what the next tap does, and there is nothing else to choose.
+//
+// After the fourth tap the day is closed. Modelling it as named stages
+// rather than an IN/OUT toggle is what lets the button carry that
+// label — and stops the lunch hour being counted as time on the floor.
 
 import { useEffect, useRef, useState } from "react";
 import {
@@ -72,7 +77,13 @@ function nextStage(kinds: (PunchKind | null)[]): Stage | null {
     };
   }
   if (has("DEPARTURE")) return null;             // day already closed
-  if (has("LUNCH_OUT") && !has("LUNCH_IN")) {
+  if (!has("LUNCH_OUT")) {
+    return {
+      kind: "LUNCH_OUT", direction: "OUT",
+      label: "GOING FOR\nLUNCH", hint: "Start your break", tone: "break",
+    };
+  }
+  if (!has("LUNCH_IN")) {
     return {
       kind: "LUNCH_IN", direction: "IN",
       label: "BACK FROM\nLUNCH", hint: "Return to work", tone: "start",
@@ -114,8 +125,6 @@ export default function HomeTab({
   const kinds = punches.map((p) => p.punch_kind);
   const stage = nextStage(kinds);
   const dayClosed = stage === null;
-  const canTakeLunch =
-    kinds.includes("ARRIVAL") && !kinds.includes("LUNCH_OUT") && !kinds.includes("DEPARTURE");
   const enabled = fence.inside && !busy && !dayClosed;
 
   const worked = data.monthDays.filter((d) =>
@@ -327,7 +336,11 @@ export default function HomeTab({
               disabled={!enabled}
               style={[
                 styles.bigButton,
-                stage?.tone === "end" ? styles.bigButtonEnd : styles.bigButtonStart,
+                // three tones, because the button now means three
+                // different things and a mis-tap costs a correction
+                stage?.tone === "end" ? styles.bigButtonEnd
+                  : stage?.tone === "break" ? styles.bigButtonBreak
+                  : styles.bigButtonStart,
                 enabled ? shadow.button : styles.bigButtonDisabled,
               ]}
             >
@@ -345,24 +358,6 @@ export default function HomeTab({
           </Animated.View>
         )}
       </View>
-
-      {/* lunch is a secondary action, never competing with the main one */}
-      {canTakeLunch && (
-        <Pressable
-          style={[styles.lunchBtn, !fence.inside && styles.lunchBtnDisabled]}
-          disabled={!fence.inside || busy}
-          onPress={() =>
-            punch({
-              kind: "LUNCH_OUT", direction: "OUT",
-              label: "LUNCH", hint: "", tone: "break",
-            })
-          }
-        >
-          <Text style={[styles.lunchText, !fence.inside && styles.textDisabled]}>
-            Going for lunch break
-          </Text>
-        </Pressable>
-      )}
 
       <Text style={styles.selfieHint}>
         Your time and location are recorded with every entry
@@ -510,6 +505,8 @@ const styles = StyleSheet.create({
   },
   bigButtonStart: { backgroundColor: colors.accent },
   bigButtonEnd: { backgroundColor: colors.good },
+  /* stepping away, not finishing — amber reads as a pause */
+  bigButtonBreak: { backgroundColor: colors.amber },
   bigButtonDone: { backgroundColor: colors.goodBg },
   bigButtonDisabled: { backgroundColor: colors.line },
   bigButtonText: {
@@ -525,16 +522,6 @@ const styles = StyleSheet.create({
   doneText: { fontFamily: fonts.black, fontSize: 19, color: colors.good, marginTop: 4 },
   doneSub: { fontFamily: fonts.semi, fontSize: 13, color: colors.ink2, marginTop: 2 },
 
-  lunchBtn: {
-    alignSelf: "center",
-    paddingVertical: 11, paddingHorizontal: 22,
-    borderRadius: 999,
-    borderWidth: 1.5, borderColor: colors.line2,
-    backgroundColor: colors.surface,
-    marginBottom: 12,
-  },
-  lunchBtnDisabled: { opacity: 0.45 },
-  lunchText: { fontFamily: fonts.extra, fontSize: 14, color: colors.ink2 },
 
   selfieHint: {
     fontFamily: fonts.semi, fontSize: 12.5, color: colors.ink3,
