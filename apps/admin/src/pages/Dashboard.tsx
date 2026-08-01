@@ -63,6 +63,11 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(new Date());
   const [staffCount, setStaffCount] = useState(0);
+  /** the whole roster, so the owner can mark someone with no row at all */
+  const [allStaff, setAllStaff] = useState<{ id: string; full_name: string }[]>([]);
+  const [markOpen, setMarkOpen] = useState(false);
+  const [markWho, setMarkWho] = useState("");
+  const [markSearch, setMarkSearch] = useState("");
   const { branchId, branch } = useBranch();
 
   useEffect(() => {
@@ -117,7 +122,7 @@ export default function Dashboard() {
         .order("created_at"),
       supabase.from("advance_balances").select("profile_id, balance"),
       supabase
-        .from("profiles").select("id", { count: "exact", head: true })
+        .from("profiles").select("id, full_name")
         .eq("role", "worker").eq("active", true).eq("branch_id", branchId),
     ]);
     if (att.error) setError(att.error.message);
@@ -169,7 +174,9 @@ export default function Dashboard() {
     setDevFirst(df);
 
     setDevices(devs ?? []);
-    setStaffCount(staff.count ?? 0);
+    const roster = (staff.data as { id: string; full_name: string }[]) ?? [];
+    setStaffCount(roster.length);
+    setAllStaff(roster);
     setAdvances((adv.data as unknown as PendingAdvance[]) ?? []);
     const b: Record<string, number> = {};
     for (const r of bal.data ?? []) {
@@ -280,6 +287,45 @@ export default function Dashboard() {
     );
   };
 
+  // Someone left their phone at home. The owner vouches for them, and
+  // the day is recorded as MANUAL — honest about resting on the owner's
+  // word rather than on a punch, and counted as worked by payroll.
+  const markPresent = async (profileId: string, name: string) => {
+    setDeciding(profileId);
+    setError(null);
+    const { error: err } = await supabase.rpc("fn_mark_present", {
+      p_profile: profileId,
+      p_date: istToday(),
+      p_note: "Marked present by the owner — no phone",
+    });
+    setDeciding(null);
+    if (err) { setError(err.message); return; }
+    setNotice(`${titleCase(name)} marked present for today.`);
+    setMarkOpen(false);
+    setMarkWho("");
+    setMarkSearch("");
+    await load();
+  };
+
+  const undoMarkPresent = async (r: DayRow) => {
+    setDeciding(r.id);
+    setError(null);
+    const { error: err } = await supabase.rpc("fn_unmark_present", {
+      p_profile: r.profile_id,
+      p_date: istToday(),
+    });
+    setDeciding(null);
+    if (err) { setError(err.message); return; }
+    setNotice(`${titleCase(r.profiles?.full_name ?? "")} is no longer marked present.`);
+    await load();
+  };
+
+  // people with no attendance row at all today — the ones who would
+  // otherwise just be missing from the page
+  const notOnPageToday = allStaff.filter(
+    (m) => !rows.some((r) => r.profile_id === m.id),
+  );
+
   /** does this day still want the owner's ruling? */
   const needsRuling = (r: DayRow) =>
     !r.decision &&
@@ -295,7 +341,8 @@ export default function Dashboard() {
   // Counting only VERIFIED hid every day the owner had already approved:
   // an approved day keeps status APP_ONLY (that IS what the evidence
   // was) and records the ruling in `decision`.
-  const PRESENT = ["VERIFIED", "APP_ONLY", "DEVICE_ONLY", "HALF_DAY", "OVERTIME"];
+  // MANUAL = the owner vouched for someone who had no phone on them
+  const PRESENT = ["VERIFIED", "APP_ONLY", "DEVICE_ONLY", "HALF_DAY", "OVERTIME", "MANUAL"];
   const present = rows.filter((r) => PRESENT.includes(r.status)).length;
   const late = rows.filter((r) => r.late_minutes > 0).length;
   const absent = rows.filter((r) => r.status === "ABSENT").length;
@@ -337,6 +384,9 @@ export default function Dashboard() {
       // an on-time day approves itself now, so "Present" should not shout
       if (r.decision === "NORMAL") return late ? null : <span className="pill good">Present</span>;
 
+      // says plainly what it rests on, so a month later nobody wonders
+      if (r.status === "MANUAL")
+        return <span className="pill warn">Present · marked by you</span>;
       if (afterCutoff) return <span className="pill serious">After 12 — your call</span>;
       if (r.status === "APP_ONLY" || r.status === "DEVICE_ONLY")
         return <span className="pill serious">Check this</span>;
@@ -396,6 +446,94 @@ export default function Dashboard() {
           <div className="label">Absent</div>
         </div>
       </div>
+
+      {/* The phone-at-home case. Deliberately near the table rather than
+          in a menu: it is needed at the moment the owner notices a name
+          missing from it. */}
+      {/* Sits on the table's own header strip rather than floating
+          above it as a loose button — it acts on that table, and the
+          count is the reason you would reach for it. */}
+      <div className="table-head">
+        <div className="table-head-text">
+          <h2>Today's attendance</h2>
+          {notOnPageToday.length > 0 && (
+            <span className="muted">
+              {notOnPageToday.length} of {staffCount} have not appeared yet
+            </span>
+          )}
+        </div>
+        <button
+          className="btn"
+          onClick={() => { setMarkOpen(true); setMarkSearch(""); }}
+        >
+          Mark someone present
+        </button>
+      </div>
+
+      {markOpen && (
+        <div className="shot-zoom" onClick={() => setMarkOpen(false)} role="presentation">
+          <div className="entry-card" onClick={(e) => e.stopPropagation()}>
+            <h3>Mark present today</h3>
+            <p className="muted">
+              For someone who is at work but has no phone with them. It counts as
+              a full working day, and says on the record that it rests on your
+              word rather than a punch.
+            </p>
+            <input
+              type="text"
+              autoFocus
+              placeholder="Search staff by name"
+              value={markSearch}
+              onChange={(e) => { setMarkSearch(e.target.value); setMarkWho(""); }}
+            />
+            <div className="mark-list">
+              {allStaff
+                .filter((m) =>
+                  m.full_name.toLowerCase().includes(markSearch.trim().toLowerCase()))
+                .map((m) => {
+                  const already = rows.find((r) => r.profile_id === m.id);
+                  const isPresent =
+                    already && PRESENT.includes(already.status);
+                  return (
+                    <button
+                      key={m.id}
+                      className={`mark-item${markWho === m.id ? " on" : ""}`}
+                      disabled={!!isPresent}
+                      onClick={() => setMarkWho(m.id)}
+                      title={isPresent ? "Already present today" : undefined}
+                    >
+                      <span>{titleCase(m.full_name)}</span>
+                      {isPresent
+                        ? <span className="muted">already present</span>
+                        : already
+                        ? <span className="muted">{already.status.toLowerCase()}</span>
+                        : <span className="muted">no entry today</span>}
+                    </button>
+                  );
+                })}
+              {allStaff.filter((m) =>
+                m.full_name.toLowerCase().includes(markSearch.trim().toLowerCase())).length === 0 && (
+                <p className="muted">Nobody matches that name.</p>
+              )}
+            </div>
+            <div className="entry-acts">
+              <button
+                className="btn primary"
+                disabled={!markWho || deciding === markWho}
+                onClick={() =>
+                  markPresent(
+                    markWho,
+                    allStaff.find((m) => m.id === markWho)?.full_name ?? "",
+                  )
+                }
+              >
+                {deciding === markWho ? "Saving…" : "Mark present"}
+              </button>
+              <button className="btn" onClick={() => setMarkOpen(false)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <table>
         <thead>
@@ -473,6 +611,14 @@ export default function Dashboard() {
                         No pay
                       </button>
                     </div>
+                  ) : r.status === "MANUAL" ? (
+                    <button
+                      className="btn small"
+                      disabled={deciding === r.id}
+                      onClick={() => undoMarkPresent(r)}
+                    >
+                      Undo
+                    </button>
                   ) : r.decision ? (
                     <span className="settled">Done</span>
                   ) : (

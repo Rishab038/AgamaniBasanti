@@ -107,7 +107,21 @@ export default function CreditTab({
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
 
-  const [mode, setMode] = useState<"khata" | "bill">("khata");
+  const [mode, setMode] = useState<"khata" | "bill" | "advance">("khata");
+
+  // Staff advances logged at the counter. Cash for these leaves the till
+  // here, so the person who knows it happened is whoever is serving —
+  // not the colleague who took the money and walked off.
+  const [colleagues, setColleagues] = useState<{ id: string; full_name: string }[]>([]);
+  const [advFor, setAdvFor] = useState<string>("");
+  const [advAmount, setAdvAmount] = useState("");
+  const [advReason, setAdvReason] = useState("");
+  const [advPicker, setAdvPicker] = useState(false);
+  const [advSearch, setAdvSearch] = useState("");
+  const [myLogged, setMyLogged] = useState<
+    { id: string; amount: number; status: string; created_at: string;
+      profiles: { full_name: string } | null }[]
+  >([]);
   const [search, setSearch] = useState("");
 
   // the customer whose page is open
@@ -145,7 +159,26 @@ export default function CreditTab({
     setCustomers((cust as CustomerBalance[]) ?? []);
     setSales((s as CreditSale[]) ?? []);
     setPayments((p as unknown as (Payment & { customer_id: string })[]) ?? []);
-  }, [branch.id]);
+
+    // colleagues at this shop, and what this person has already logged
+    // for them — without the second list a counter worker cannot tell a
+    // saved entry from a lost one, and files it twice
+    const [{ data: mates }, { data: logged }] = await Promise.all([
+      // Through an RPC, not a table read: profiles is owner-only for
+      // SELECT, and widening it would expose salaries to the counter.
+      supabase.rpc("fn_branch_colleagues"),
+      supabase
+        .from("advances")
+        .select("id, amount, status, created_at, profiles!advances_profile_id_fkey(full_name)")
+        .eq("recorded_by", profile.id)
+        .neq("profile_id", profile.id)
+        .order("created_at", { ascending: false })
+        .limit(20),
+    ]);
+    // already excludes the caller and comes back sorted by name
+    setColleagues((mates as { id: string; full_name: string }[]) ?? []);
+    setMyLogged((logged as never) ?? []);
+  }, [branch.id, profile.id]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -283,6 +316,52 @@ export default function CreditTab({
           : msg.toLowerCase().includes("network") || msg.toLowerCase().includes("fetch")
           ? "No internet. Nothing was saved — try again when you are back online."
           : "Could not record this. Please try again.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // ---------- staff advance, logged for a colleague ----------
+  const advReady = advFor !== "" && Number(advAmount || 0) > 0;
+
+  const saveAdvance = async () => {
+    if (!advReady || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const { error: err } = await supabase.from("advances").insert({
+        profile_id: advFor,
+        amount: Number(advAmount),
+        reason: advReason.trim() || null,
+        // filed, not granted — the owner still decides, and nothing
+        // reaches payroll until they do
+        status: "PENDING",
+        recorded_by: profile.id,
+      });
+      if (err) throw err;
+
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      const who = colleagues.find((c) => c.id === advFor)?.full_name ?? "Staff";
+      setDone(`${rupees(Number(advAmount))} advance for ${who} sent to the owner for approval`);
+      setAdvFor("");
+      setAdvAmount("");
+      setAdvReason("");
+      setAdvSearch("");
+      await load();
+    } catch (e) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      const msg = (e as Error)?.message ?? "";
+      setError(
+        // Do not name a cause the error does not actually prove. This
+        // message used to assert a branch mismatch for ANY policy
+        // failure, and said exactly that while the real fault was
+        // elsewhere — which is worse than saying nothing.
+        msg.toLowerCase().includes("row-level security") || msg.toLowerCase().includes("policy")
+          ? "This was refused. Check they still work at this shop, then tell the owner if it keeps happening."
+          : msg.toLowerCase().includes("network") || msg.toLowerCase().includes("fetch")
+          ? "No internet. Nothing was saved — try again when you are back online."
+          : "Could not save this advance. Please try again.",
       );
     } finally {
       setBusy(false);
@@ -436,6 +515,14 @@ export default function CreditTab({
               New bill
             </Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.segBtn, mode === "advance" && styles.segOn]}
+            onPress={() => setMode("advance")}
+          >
+            <Text style={[styles.segText, mode === "advance" && styles.segTextOn]}>
+              Staff advance
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {error && (
@@ -502,6 +589,96 @@ export default function CreditTab({
                 </TouchableOpacity>
               );
             })}
+          </>
+        ) : mode === "advance" ? (
+          <>
+            <View style={[styles.card, shadow.card]}>
+              <Text style={styles.advIntro}>
+                Log money given to a colleague from the till. The owner approves
+                it before it affects anyone's salary.
+              </Text>
+
+              <Text style={styles.label}>Who took the advance?</Text>
+              {/* A field that opens a list, not a text box. Names here
+                  are typed inconsistently across the roster, so making
+                  someone spell one correctly is a bad way to ask. */}
+              <TouchableOpacity
+                style={[styles.picker, advFor !== "" && styles.pickerChosen]}
+                onPress={() => { setAdvPicker(true); setAdvSearch(""); }}
+              >
+                <Text style={advFor ? styles.pickerValue : styles.pickerPlaceholder}>
+                  {advFor
+                    ? colleagues.find((c) => c.id === advFor)?.full_name
+                    : colleagues.length === 0
+                    ? "No other staff at this shop"
+                    : `Choose from ${colleagues.length} staff`}
+                </Text>
+                <Ionicons
+                  name={advFor ? "checkmark-circle" : "chevron-down"}
+                  size={18}
+                  color={advFor ? colors.good : colors.ink3}
+                />
+              </TouchableOpacity>
+
+              <Text style={styles.label}>Amount given (₹)</Text>
+              <TextInput
+                style={styles.input}
+                value={advAmount}
+                onChangeText={(v) => setAdvAmount(digits(v))}
+                keyboardType="number-pad"
+                placeholder="0"
+                placeholderTextColor={colors.ink3}
+              />
+
+              <Text style={styles.label}>Reason (optional)</Text>
+              <TextInput
+                style={[styles.input, styles.multiline]}
+                value={advReason}
+                onChangeText={setAdvReason}
+                placeholder="What they said it was for"
+                placeholderTextColor={colors.ink3}
+                multiline
+              />
+
+              <TouchableOpacity
+                style={[styles.submit, !advReady && styles.submitOff]}
+                onPress={saveAdvance}
+                disabled={!advReady || busy}
+              >
+                {busy ? <ActivityIndicator color="#fff" />
+                  : <Text style={styles.submitText}>Send to owner for approval</Text>}
+              </TouchableOpacity>
+              {!advReady && !busy && (
+                <Text style={styles.needs}>Choose the person and enter an amount.</Text>
+              )}
+            </View>
+
+            {myLogged.length > 0 && (
+              <>
+                <Text style={styles.sectionHead}>Logged by you</Text>
+                {myLogged.map((a) => (
+                  <View key={a.id} style={[styles.row, shadow.card]}>
+                    <View style={styles.rowWho}>
+                      <Text style={styles.rowName} numberOfLines={1}>
+                        {a.profiles?.full_name ?? "Staff"}
+                      </Text>
+                      <Text style={styles.rowAgo}>{fmtDay(a.created_at)}</Text>
+                    </View>
+                    <View style={styles.rowRight}>
+                      <Text style={[styles.rowAmt, styles.owed]}>{rupees(a.amount)}</Text>
+                      <Text style={[
+                        styles.advStatus,
+                        a.status === "APPROVED" && styles.advOk,
+                        a.status === "REJECTED" && styles.advNo,
+                      ]}>
+                        {a.status === "PENDING" ? "waiting"
+                          : a.status === "APPROVED" ? "approved" : "rejected"}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+              </>
+            )}
           </>
         ) : (
           <View style={[styles.card, shadow.card]}>
@@ -817,6 +994,61 @@ export default function CreditTab({
         </View>
       )}
 
+      {/* choose a colleague */}
+      {advPicker && (
+        <View style={styles.sheetWrap}>
+          <TouchableOpacity
+            style={styles.sheetBackdrop}
+            activeOpacity={1}
+            onPress={() => setAdvPicker(false)}
+          />
+          <View style={[styles.sheet, shadow.card]}>
+            <View style={styles.pickerHead}>
+              <Text style={styles.sheetName}>Who took the advance?</Text>
+              <TextInput
+                style={styles.search}
+                value={advSearch}
+                onChangeText={setAdvSearch}
+                placeholder="Search by name"
+                placeholderTextColor={colors.ink3}
+                autoCorrect={false}
+              />
+            </View>
+            <ScrollView style={styles.pickerList} keyboardShouldPersistTaps="handled">
+              {colleagues
+                .filter((c) =>
+                  c.full_name.toLowerCase().includes(advSearch.trim().toLowerCase()))
+                .map((c) => (
+                  <TouchableOpacity
+                    key={c.id}
+                    style={styles.pickerRow}
+                    onPress={() => { setAdvFor(c.id); setAdvPicker(false); setAdvSearch(""); }}
+                  >
+                    <View style={styles.avatar}>
+                      <Text style={styles.avatarText}>{initialsOf(c.full_name)}</Text>
+                    </View>
+                    <Text style={styles.pickerRowName} numberOfLines={1}>{c.full_name}</Text>
+                    {advFor === c.id && (
+                      <Ionicons name="checkmark" size={18} color={colors.good} />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              {colleagues.filter((c) =>
+                c.full_name.toLowerCase().includes(advSearch.trim().toLowerCase())).length === 0 && (
+                <Text style={styles.muted}>
+                  {colleagues.length === 0
+                    ? "No other active staff at this shop."
+                    : "Nobody matches that name."}
+                </Text>
+              )}
+            </ScrollView>
+            <TouchableOpacity style={styles.sheetCancel} onPress={() => setAdvPicker(false)}>
+              <Text style={styles.sheetCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
       <PhotoCapture
         visible={proofCamera}
         facing="back"
@@ -926,6 +1158,36 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.line,
   },
   suggestHead: { fontFamily: fonts.bold, fontSize: 12, color: colors.ink3, marginBottom: 6 },
+  picker: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    backgroundColor: colors.bg,
+    borderWidth: 1, borderColor: colors.line, borderRadius: radius.md,
+    paddingHorizontal: 14, paddingVertical: 14, marginTop: 5,
+  },
+  pickerChosen: { borderColor: colors.good, backgroundColor: colors.goodBg },
+  pickerValue: { fontFamily: fonts.bold, fontSize: 16, color: colors.ink, flex: 1 },
+  pickerPlaceholder: { fontFamily: fonts.regular, fontSize: 16, color: colors.ink3, flex: 1 },
+  pickerHead: { padding: 22, paddingBottom: 8 },
+  pickerList: { maxHeight: 380, paddingHorizontal: 14 },
+  pickerRow: {
+    flexDirection: "row", alignItems: "center", gap: 12,
+    paddingVertical: 12, paddingHorizontal: 8,
+    borderBottomWidth: 1, borderBottomColor: colors.line,
+  },
+  pickerRowName: { fontFamily: fonts.bold, fontSize: 15.5, color: colors.ink, flex: 1 },
+  advIntro: {
+    fontFamily: fonts.regular, fontSize: 13.5, lineHeight: 19,
+    color: colors.ink2, marginBottom: 4,
+  },
+  advChosen: {
+    flexDirection: "row", alignItems: "center", gap: 8, marginTop: 8,
+    backgroundColor: colors.goodBg, borderRadius: radius.md, padding: 12,
+  },
+  advChosenText: { fontFamily: fonts.bold, fontSize: 15, color: colors.good, flex: 1 },
+  advChange: { fontFamily: fonts.bold, fontSize: 13, color: colors.ink3 },
+  advStatus: { fontFamily: fonts.bold, fontSize: 11, color: colors.amber, marginTop: 1 },
+  advOk: { color: colors.good },
+  advNo: { color: colors.serious },
   suggestItem: {
     flexDirection: "row", justifyContent: "space-between", alignItems: "center",
     paddingVertical: 8,

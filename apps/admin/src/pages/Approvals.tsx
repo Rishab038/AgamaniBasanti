@@ -15,7 +15,10 @@ type Advance = {
   status: "PENDING" | "APPROVED" | "REJECTED";
   created_at: string;
   decided_at: string | null;
+  recorded_by: string | null;
   profiles: { full_name: string; employee_code: string } | null;
+  /** whoever filed it — differs from profiles when the counter logged it */
+  recorder: { full_name: string } | null;
 };
 
 const rupees = (n: number) => `₹${Number(n).toLocaleString("en-IN")}`;
@@ -36,7 +39,7 @@ export default function Approvals() {
         // advances has two FKs to profiles (requester + decider) —
         // PostgREST must be told this join means the requester
         .select(
-          "id, profile_id, amount, reason, status, created_at, decided_at, profiles!advances_profile_id_fkey!inner(full_name, employee_code, branch_id)",
+          "id, profile_id, amount, reason, status, created_at, decided_at, recorded_by, profiles!advances_profile_id_fkey!inner(full_name, employee_code, branch_id), recorder:profiles!advances_recorded_by_fkey(full_name)",
         )
         .eq("profiles.branch_id", branchId ?? "")
         .order("created_at", { ascending: false })
@@ -92,9 +95,19 @@ export default function Approvals() {
         <div className="approval-card" key={a.id}>
           <div>
             <div className="who">
-              {titleCase(a.profiles?.full_name ?? "")} asked for {rupees(a.amount)}
+              {titleCase(a.profiles?.full_name ?? "")}
+              {a.recorded_by && a.recorded_by !== a.profile_id
+                ? " took " : " asked for "}
+              {rupees(a.amount)}
               <span className="muted"> · {fmtDate(a.created_at)}</span>
             </div>
+            {/* Who wrote it down matters only when it was not the person
+                who took the money — then it is the whole provenance. */}
+            {a.recorded_by && a.recorded_by !== a.profile_id && (
+              <div className="logged-by">
+                logged at the counter by {titleCase(a.recorder?.full_name ?? "—")}
+              </div>
+            )}
             <div className="why">
               {a.reason ? `${a.reason} · ` : ""}
               current balance: {rupees(balances[a.profile_id] ?? 0)} → after:{" "}

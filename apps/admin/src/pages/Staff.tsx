@@ -420,7 +420,7 @@ export default function Staff() {
   });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({
-    full_name: "", base_salary: 0, joined_on: "", employee_code: "",
+    full_name: "", base_salary: 0, joined_on: "", employee_code: "", device_enroll_no: "",
     employment_type: "", shift_start: "", shift_end: "", lunch_minutes: 60,
     salary_basic: 0, salary_hra: 0, salary_conveyance: 0, salary_washing: 0,
   });
@@ -443,6 +443,7 @@ export default function Staff() {
       salary_hra: Number(row.salary_hra) || 0,
       salary_conveyance: Number(row.salary_conveyance) || 0,
       salary_washing: Number(row.salary_washing) || 0,
+      device_enroll_no: row.device_enroll_no != null ? String(row.device_enroll_no) : "",
     });
   };
 
@@ -462,7 +463,9 @@ export default function Staff() {
       editForm.salary_basic + editForm.salary_hra +
       editForm.salary_conveyance + editForm.salary_washing;
 
+    const enroll = parseInt(editForm.device_enroll_no, 10);
     const { error: err } = await supabase.from("profiles").update({
+      device_enroll_no: Number.isInteger(enroll) && enroll > 0 ? enroll : null,
       full_name: editForm.full_name.trim(),
       base_salary: isPf ? componentSum : editForm.base_salary,
       joined_on: editForm.joined_on || null,
@@ -491,19 +494,11 @@ export default function Staff() {
     await load();
   };
 
-  const saveEnrollNo = async (row: StaffRow, value: string) => {
-    const n = value === "" ? null : Number(value);
-    const { error: err } = await supabase
-      .from("profiles").update({ device_enroll_no: n }).eq("id", row.id);
-    if (err) setError(err.message);
-    else setNotice(`Fingerprint machine number for ${row.full_name} saved.`);
-  };
-
   return (
     <div>
       <div className="page-head">
         <h1>Staff</h1>
-        <p>Add staff, hand out login codes, and manage PINs, phones and fingerprint numbers.</p>
+        <p>Click a name to see and change everything about that person.</p>
       </div>
 
       {notice && <div className="banner info" onClick={() => setNotice(null)}>{notice}</div>}
@@ -798,8 +793,6 @@ export default function Staff() {
             <th>Name</th>
             <th>Type</th>
             <th>Salary</th>
-            <th>Machine no.</th>
-            <th>Phone app</th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -808,7 +801,12 @@ export default function Staff() {
             <Fragment key={row.id}>
             <tr className={row.active ? "" : "inactive"}>
               <td>
-                {titleCase(row.full_name)}{!row.active && " (inactive)"}
+                {/* the name is the way in — everything else about a
+                    person lives on their own panel, not in this row */}
+                <button className="name-link" onClick={() => startEdit(row)}>
+                  {titleCase(row.full_name)}
+                </button>
+                {!row.active && <span className="muted"> (inactive)</span>}
                 {/* who is on the counter is worth seeing without opening
                     a menu — it is a permission over money, not a setting */}
                 {row.can_bill && <span className="tag-bill">Billing counter</span>}
@@ -837,25 +835,6 @@ export default function Staff() {
                 ) : (
                   <button className="link-btn" onClick={() => startEdit(row)}>Set salary</button>
                 )}
-              </td>
-              <td>
-                {row.role === "worker" ? (
-                  <input
-                    className="enroll-input"
-                    type="number"
-                    defaultValue={row.device_enroll_no ?? ""}
-                    placeholder="not set"
-                    onBlur={(e) => {
-                      const v = e.target.value;
-                      if (v !== String(row.device_enroll_no ?? "")) saveEnrollNo(row, v);
-                    }}
-                  />
-                ) : "—"}
-              </td>
-              <td>
-                {row.device_id
-                  ? <span className="pill good">Linked</span>
-                  : <span className="dash">—</span>}
               </td>
               <td className="actions">
                 {pendingAction?.id !== row.id && (
@@ -1030,7 +1009,7 @@ export default function Staff() {
 
             {editingId === row.id && (
               <tr>
-                <td colSpan={6} className="edit-cell">
+                <td colSpan={4} className="edit-cell">
                   <div className="edit-panel">
                     <label>
                       Full name
@@ -1082,6 +1061,39 @@ export default function Staff() {
                           {" · "}PF is 12% of Basic, ESI 0.75% of gross, plus professional tax.
                         </div>
                       </>
+                    )}
+                    {row.role === "worker" && (
+                      <label>
+                        Machine number
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={editForm.device_enroll_no}
+                          placeholder="not set"
+                          onChange={(e) =>
+                            setEditForm({
+                              ...editForm,
+                              device_enroll_no: e.target.value.replace(/[^0-9]/g, ""),
+                            })}
+                        />
+                        <span className="field-hint">
+                          The number the fingerprint machine gives them when their
+                          finger is enrolled. Without it their punches cannot be
+                          matched to this person.
+                        </span>
+                      </label>
+                    )}
+                    {row.role === "worker" && (
+                      <div className="field-static">
+                        <span className="field-static-label">Phone app</span>
+                        {row.device_id ? (
+                          <span className="pill good">
+                            Signed in on a phone
+                          </span>
+                        ) : (
+                          <span className="muted">Not signed in yet</span>
+                        )}
+                      </div>
                     )}
                     <label>
                       Joining date

@@ -1,0 +1,23 @@
+-- ============================================================
+-- 0045: the owner can mark someone present who left their phone at home.
+--
+-- Three connected pieces, because doing only the first would create a
+-- day that looks paid on screen and is not paid in the payroll.
+--
+-- 1. A new day_status, MANUAL. A day with no app punch and no machine
+--    punch, present on the owner's word alone. Calling it VERIFIED or
+--    APP_ONLY would be a lie about what evidence exists, and the whole
+--    point of the status column is to say what actually happened.
+--
+-- 2. A BUG FIX in fn_decide_day. Ruling NORMAL left `status` untouched
+--    (`else status`), so an ABSENT day the owner marked Present stayed
+--    ABSENT — and payroll pays on status, not on decision. One such day
+--    exists right now: Soumen Dutta, 24 July, ruled Present and counted
+--    absent. The dashboard showed "Present" the whole time, which is
+--    exactly how a wrong number survives to payday.
+--
+-- 3. Payroll counts MANUAL as a worked day. Without this the new button
+--    would produce the same silent non-payment it is meant to prevent.
+-- ============================================================
+
+alter type day_status add value if not exists 'MANUAL';

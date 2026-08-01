@@ -31,6 +31,7 @@ const STATUS_META: Record<string, { label: string; tone: string }> = {
   ABSENT: { label: "Absent", tone: "serious" },
   HALF_DAY: { label: "Half day", tone: "warn" },
   OVERTIME: { label: "Overtime", tone: "good" },
+  MANUAL: { label: "Marked by owner", tone: "warn" },
   LEAVE_PAID: { label: "Paid leave", tone: "info" },
   LEAVE_UNPAID: { label: "Unpaid leave", tone: "info" },
   HOLIDAY: { label: "Holiday", tone: "neutral" },
@@ -88,7 +89,7 @@ export default function Attendance() {
   // anyone punched for it — however it was verified, and whatever the
   // owner later decided — except when the ruling was NO_PAY.
   const summary = (() => {
-    const PRESENT = ["VERIFIED", "APP_ONLY", "DEVICE_ONLY", "HALF_DAY", "OVERTIME"];
+    const PRESENT = ["VERIFIED", "APP_ONLY", "DEVICE_ONLY", "HALF_DAY", "OVERTIME", "MANUAL"];
     const byStaff = new Map<string, { id: string; name: string; present: number; absent: number }>();
     for (const r of rows) {
       const id = r.profile_id;
@@ -139,6 +140,38 @@ export default function Attendance() {
   const [pending, setPending] = useState<string | null>(null); // row id being decided
   const [note, setNote] = useState("");
 
+  // Fixing a day nobody marked at the time. Separate from the row
+  // buttons because the day in question often has no row to press.
+  const [fixOpen, setFixOpen] = useState(false);
+  const [fixWho, setFixWho] = useState("");
+  const [fixDate, setFixDate] = useState(today());
+  const [fixWhat, setFixWhat] = useState("NORMAL");
+  const [fixNote, setFixNote] = useState("");
+  const [fixBusy, setFixBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const saveFix = async () => {
+    if (!fixWho || !fixDate) return;
+    setFixBusy(true);
+    setError(null);
+    const { error: err } = await supabase.rpc("fn_owner_set_day", {
+      p_profile: fixWho,
+      p_date: fixDate,
+      p_decision: fixWhat,
+      p_note: fixNote.trim() || "Set by the owner afterwards",
+    });
+    setFixBusy(false);
+    if (err) { setError(err.message); return; }
+    const who = workers.find((w) => w.id === fixWho)?.full_name ?? "Staff";
+    const label = fixWhat === "NORMAL" ? "present"
+      : fixWhat === "HALF_DAY" ? "a half day"
+      : fixWhat === "OVERTIME" ? "overtime" : "absent";
+    setNotice(`${titleCase(who)} marked ${label} for ${fixDate}.`);
+    setFixOpen(false);
+    setFixNote("");
+    await load();
+  };
+
   const decide = async (row: Row, decision: string) => {
     setPending(null);
     const { error: err } = await supabase.rpc("fn_decide_day", {
@@ -186,17 +219,79 @@ export default function Attendance() {
         </p>
       </div>
       {error && <div className="banner error" onClick={() => setError(null)}>{error}</div>}
+      {notice && <div className="banner info" onClick={() => setNotice(null)}>{notice}</div>}
 
-      <div className="card filter-row">
-        <label>
+      {fixOpen && (
+        <div className="shot-zoom" onClick={() => setFixOpen(false)} role="presentation">
+          <div className="entry-card" onClick={(e) => e.stopPropagation()}>
+            <h3>Change a day</h3>
+            <p className="muted">
+              For a day nobody marked at the time. Works whether or not anything
+              was recorded, and counts towards salary the same as any other day.
+            </p>
+            <label>
+              Staff
+              <select value={fixWho} onChange={(e) => setFixWho(e.target.value)}>
+                <option value="">Choose a person</option>
+                {workers.map((w) => (
+                  <option key={w.id} value={w.id}>{titleCase(w.full_name)}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Day
+              <input
+                type="date"
+                value={fixDate}
+                max={today()}
+                onChange={(e) => setFixDate(e.target.value)}
+              />
+            </label>
+            <label>
+              Count it as
+              <select value={fixWhat} onChange={(e) => setFixWhat(e.target.value)}>
+                <option value="NORMAL">Present — a full working day</option>
+                <option value="HALF_DAY">Half day</option>
+                <option value="OVERTIME">Overtime</option>
+                <option value="NO_PAY">Absent — no pay</option>
+              </select>
+            </label>
+            <label>
+              Why (optional)
+              <input
+                type="text"
+                value={fixNote}
+                placeholder="e.g. forgot to punch, phone at home"
+                onChange={(e) => setFixNote(e.target.value)}
+              />
+            </label>
+            <div className="entry-acts">
+              <button
+                className="btn primary"
+                disabled={!fixWho || !fixDate || fixBusy}
+                onClick={saveFix}
+              >
+                {fixBusy ? "Saving…" : "Save"}
+              </button>
+              <button className="btn" onClick={() => setFixOpen(false)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* What you are looking at on the left, what you can do about it
+          on the right. The two used to be interleaved, so a button sat
+          between two labelled fields and lined up with neither. */}
+      <div className="card toolbar">
+        <label className="toolbar-field">
           From
           <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
         </label>
-        <label>
+        <label className="toolbar-field">
           To
           <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
         </label>
-        <label>
+        <label className="toolbar-field">
           Staff
           <select value={workerId} onChange={(e) => setWorkerId(e.target.value)}>
             <option value="">Everyone</option>
@@ -205,7 +300,7 @@ export default function Attendance() {
             ))}
           </select>
         </label>
-        <label className="weekday">
+        <label className="toolbar-check">
           <input
             type="checkbox"
             checked={onlyProblems}
@@ -213,9 +308,15 @@ export default function Attendance() {
           />
           Needs attention only
         </label>
-        <button className="btn" onClick={exportCsv} disabled={rows.length === 0}>
-          ⬇ Export CSV
-        </button>
+
+        <div className="toolbar-end">
+          <button className="btn" onClick={() => setFixOpen(true)}>
+            Change a day
+          </button>
+          <button className="btn" onClick={exportCsv} disabled={rows.length === 0}>
+            ⬇ Export CSV
+          </button>
+        </div>
       </div>
 
       {/* Everyone's totals for the chosen period, at a glance — the
