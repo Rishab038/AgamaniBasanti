@@ -2,12 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import * as Updates from "expo-updates";
-import {
-  useFonts,
-  Inter_400Regular,
-  Inter_500Medium,
-  Inter_600SemiBold,
-} from "@expo-google-fonts/inter";
+import { useFonts } from "expo-font";
 import type { Session } from "@supabase/supabase-js";
 import { Branch, Profile, supabase } from "./src/lib/supabase";
 import LoginScreen from "./src/screens/LoginScreen";
@@ -16,10 +11,15 @@ import PendingScreen from "./src/screens/PendingScreen";
 import ConsentScreen from "./src/screens/ConsentScreen";
 
 export default function App() {
+  // Required file-by-file rather than imported from the package root.
+  // `@expo-google-fonts/inter`'s index.js has a top-level require() for
+  // all eighteen weights, italics included, so importing three of them
+  // still shipped every one — about 6 MB of font for 1 MB of use. Metro
+  // cannot drop them: a require() of an asset is a side effect.
   const [fontsLoaded] = useFonts({
-    Inter_400Regular,
-    Inter_500Medium,
-    Inter_600SemiBold,
+    Inter_400Regular: require("@expo-google-fonts/inter/400Regular/Inter_400Regular.ttf"),
+    Inter_500Medium: require("@expo-google-fonts/inter/500Medium/Inter_500Medium.ttf"),
+    Inter_600SemiBold: require("@expo-google-fonts/inter/600SemiBold/Inter_600SemiBold.ttf"),
   });
   const [session, setSession] = useState<Session | null>(null);
   const [ready, setReady] = useState(false);

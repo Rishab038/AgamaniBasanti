@@ -81,13 +81,20 @@ export default function Attendance() {
   const [from, setFrom] = useState(monthStart());
   const [to, setTo] = useState(today());
   const [workerId, setWorkerId] = useState("");
-  const [onlyProblems, setOnlyProblems] = useState(false);
+  /** the screen opens on the exception list — that is the question it answers */
+  const [seg, setSeg] = useState<"attention" | "good" | "all">("attention");
+  const [query, setQuery] = useState("");
+  const [rangeOpen, setRangeOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { branchId } = useBranch();
 
   // per-staff totals for the chosen period. A day counts as present if
   // anyone punched for it — however it was verified, and whatever the
   // owner later decided — except when the ruling was NO_PAY.
+  //
+  // `total` counts only days the person was expected: rest days,
+  // holidays and approved leave are left out of both halves, so a week
+  // with a weekly off reads "Came 6 of 6" rather than 6 of 7.
   const summary = (() => {
     const PRESENT = ["VERIFIED", "APP_ONLY", "DEVICE_ONLY", "HALF_DAY", "OVERTIME", "MANUAL"];
     const byStaff = new Map<string, { id: string; name: string; present: number; absent: number }>();
@@ -99,8 +106,54 @@ export default function Attendance() {
       if (r.status === "ABSENT" || r.decision === "NO_PAY") acc.absent += 1;
       else if (PRESENT.includes(r.status)) acc.present += 1;
     }
-    return [...byStaff.values()].sort((a, b) => a.name.localeCompare(b.name));
+    // mixed-case names ("MANDIP" vs "Mithu") must interleave properly
+    return [...byStaff.values()].sort((a, b) =>
+      a.name.localeCompare(b.name, "en", { sensitivity: "base" }));
   })();
+
+  const initialsOf = (name: string) =>
+    name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("");
+
+  const q = query.trim().toLowerCase();
+  const people = summary
+    .filter((s) => (seg === "attention" ? s.absent > 0 : seg === "good" ? s.absent === 0 : true))
+    .filter((s) => !q || s.name.toLowerCase().includes(q));
+
+  const missedCount = summary.filter((s) => s.absent > 0).length;
+  const perfectCount = summary.length - missedCount;
+
+  const expected = summary.reduce((t, s) => t + s.present + s.absent, 0);
+  const attended = summary.reduce((t, s) => t + s.present, 0);
+  const turnout = expected > 0 ? Math.round((attended / expected) * 100) : 0;
+
+  /** "Sat 1 — Sun 2 August", or "Mon 28 July — Sat 2 August" across months */
+  const rangeLabel = (() => {
+    const a = new Date(`${from}T00:00:00`);
+    const b = new Date(`${to}T00:00:00`);
+    const wd = (d: Date) => d.toLocaleDateString("en-IN", { weekday: "short" });
+    const mo = (d: Date) => d.toLocaleDateString("en-IN", { month: "long" });
+    if (from === to) return `${wd(a)} ${a.getDate()} ${mo(a)}`;
+    const sameMonth = a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear();
+    return sameMonth
+      ? `${wd(a)} ${a.getDate()} — ${wd(b)} ${b.getDate()} ${mo(b)}`
+      : `${wd(a)} ${a.getDate()} ${mo(a)} — ${wd(b)} ${b.getDate()} ${mo(b)}`;
+  })();
+
+  const dayCount = Math.max(
+    1,
+    Math.round(
+      (new Date(`${to}T00:00:00`).getTime() - new Date(`${from}T00:00:00`).getTime()) / 86400000,
+    ) + 1,
+  );
+
+  /** the badge on a row. "Missed both" is the handoff's copy and only
+   *  reads right on a two-day range, so it is kept for exactly that. */
+  const tagFor = (s: { present: number; absent: number }) => {
+    if (s.absent === 0) return { cls: "full", label: "All days" };
+    if (s.present === 0)
+      return { cls: "miss-all", label: s.absent === 2 ? "Missed both" : "Missed all" };
+    return { cls: "miss-some", label: `Missed ${s.absent}` };
+  };
 
   const load = useCallback(async () => {
     let q = supabase
@@ -113,13 +166,13 @@ export default function Attendance() {
       .lte("work_date", to)
       .order("work_date", { ascending: false });
     if (workerId) q = q.eq("profile_id", workerId);
-    // "needs attention" = single-source days OR a flagged shift-window
-    // issue that the owner has not ruled on yet
-    if (onlyProblems) q = q.is("decision", null).not("review_reasons", "eq", "{}");
+    // Deliberately unfiltered otherwise: the list is a roll-up per
+    // person, so narrowing at the database would make "Came 3 of 5"
+    // count only the days that were already a problem.
     const { data, error: err } = await q;
     if (err) setError(err.message);
     setRows((data as unknown as Row[]) ?? []);
-  }, [from, to, workerId, onlyProblems, branchId]);
+  }, [from, to, workerId, branchId]);
 
   useEffect(() => {
     if (!branchId) return;
@@ -210,13 +263,46 @@ export default function Attendance() {
 
   return (
     <div>
-      <div className="page-head">
-        <h1>Attendance</h1>
-        <p>
-          {workerId
-            ? "Day by day — decide any day that needs your ruling."
-            : "Days present and absent for each person. Click a name to see their days."}
-        </p>
+      {/* The owner opens this to answer one question — who did not turn
+          up? So the screen leads with the range, the headcount and the
+          turnout, and the list underneath opens on the exceptions. */}
+      <div className="sheet-head">
+        <div>
+          <h1>Attendance</h1>
+          <p className="sub">
+            {workerId
+              ? "Day by day — decide any day that needs your ruling."
+              : `${rangeLabel} · ${summary.length} ${summary.length === 1 ? "person" : "people"} · ${turnout}% turned up`}
+          </p>
+        </div>
+        <div className="sheet-head-acts">
+          <div className="pop-wrap">
+            <button className="pill-btn" onClick={() => setRangeOpen((o) => !o)}>
+              {dayCount === 1 ? "This day" : `These ${dayCount} days`} ▾
+            </button>
+            {rangeOpen && (
+              <>
+                <div className="menu-backdrop" onClick={() => setRangeOpen(false)} />
+                <div className="pop">
+                  <label>
+                    From
+                    <input type="date" value={from} max={to}
+                           onChange={(e) => setFrom(e.target.value)} />
+                  </label>
+                  <label>
+                    To
+                    <input type="date" value={to} min={from} max={today()}
+                           onChange={(e) => setTo(e.target.value)} />
+                  </label>
+                  <button className="btn" onClick={() => setRangeOpen(false)}>Done</button>
+                </div>
+              </>
+            )}
+          </div>
+          <button className="btn primary" onClick={exportCsv} disabled={rows.length === 0}>
+            Download CSV
+          </button>
+        </div>
       </div>
       {error && <div className="banner error" onClick={() => setError(null)}>{error}</div>}
       {notice && <div className="banner info" onClick={() => setNotice(null)}>{notice}</div>}
@@ -279,79 +365,79 @@ export default function Attendance() {
         </div>
       )}
 
-      {/* What you are looking at on the left, what you can do about it
-          on the right. The two used to be interleaved, so a button sat
-          between two labelled fields and lined up with neither. */}
-      <div className="card toolbar">
-        <label className="toolbar-field">
-          From
-          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-        </label>
-        <label className="toolbar-field">
-          To
-          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
-        </label>
-        <label className="toolbar-field">
-          Staff
-          <select value={workerId} onChange={(e) => setWorkerId(e.target.value)}>
-            <option value="">Everyone</option>
-            {workers.map((w) => (
-              <option key={w.id} value={w.id}>{titleCase(w.full_name)}</option>
-            ))}
-          </select>
-        </label>
-        <label className="toolbar-check">
-          <input
-            type="checkbox"
-            checked={onlyProblems}
-            onChange={(e) => setOnlyProblems(e.target.checked)}
-          />
-          Needs attention only
-        </label>
+      {/* Thirty-six people times a month of rows is a list nobody reads,
+          so this stays a roll-up per person; the day-by-day detail
+          appears once you pick a name. */}
+      {!workerId && (
+        <>
+          <div className="seg-row">
+            <div className="seg" role="group" aria-label="Which people to show">
+              {([
+                ["attention", `Needs a look · ${missedCount}`],
+                ["good", `All good · ${perfectCount}`],
+                ["all", `Everyone · ${summary.length}`],
+              ] as const).map(([k, label]) => (
+                <button
+                  key={k}
+                  className={`seg-btn${seg === k ? " on" : ""}`}
+                  aria-pressed={seg === k}
+                  onClick={() => setSeg(k)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <input
+              className="seg-search"
+              type="search"
+              aria-label="Search a name"
+              placeholder="Search a name"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </div>
 
-        <div className="toolbar-end">
-          <button className="btn" onClick={() => setFixOpen(true)}>
-            Change a day
-          </button>
-          <button className="btn" onClick={exportCsv} disabled={rows.length === 0}>
-            ⬇ Export CSV
-          </button>
-        </div>
-      </div>
+          {people.map((s) => {
+            const tag = tagFor(s);
+            return (
+              <button key={s.id} className="person-row" onClick={() => setWorkerId(s.id)}>
+                <span className="avatar">{initialsOf(s.name)}</span>
+                <span className="person-name">{titleCase(s.name)}</span>
+                <span className="person-days">
+                  Came {s.present} of {s.present + s.absent}
+                </span>
+                <span className="person-tag">
+                  <span className={`tag ${tag.cls}`}>{tag.label}</span>
+                </span>
+                <span className="person-chev" aria-hidden="true">›</span>
+              </button>
+            );
+          })}
 
-      {/* Everyone's totals for the chosen period, at a glance — the
-          day-by-day table below answers "what happened on the 14th",
-          this answers "how is each person doing overall". */}
-      {/* Everyone = totals only. Thirty-six people times a month of rows
-          was a thousand-line list nobody reads; the day-by-day detail
-          appears once you pick a person. Click a card to do that. */}
-      {!workerId && summary.length > 0 && (
-        <table>
-          <thead>
-            <tr>
-              <th>Staff</th>
-              <th className="num">Present</th>
-              <th className="num">Absent</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {summary.map((s) => (
-              <tr key={s.id} className="clickable" onClick={() => setWorkerId(s.id)}>
-                <td>{s.name}</td>
-                <td className="num strong">{s.present}</td>
-                <td className={`num${s.absent > 0 ? " bad" : " muted"}`}>{s.absent}</td>
-                <td className="num">
-                  <span className="row-go">View days →</span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+          {people.length === 0 && (
+            <div className="list-empty">
+              {summary.length === 0
+                ? "No attendance in this period."
+                : query
+                ? "No one by that name in this list."
+                : seg === "attention"
+                ? "Everybody turned up every day."
+                : "Nobody in this list."}
+            </div>
+          )}
 
-      {!workerId && summary.length === 0 && (
-        <div className="card muted">No attendance in this period.</div>
+          <div className="sheet-foot">
+            <span className="count">
+              Showing {people.length}{" "}
+              {seg === "attention"
+                ? "people who missed a day"
+                : seg === "good"
+                ? "people with full attendance"
+                : "people"}
+            </span>
+            <button className="btn" onClick={() => setFixOpen(true)}>Fix a day</button>
+          </div>
+        </>
       )}
 
       {workerId && (

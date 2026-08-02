@@ -23,7 +23,22 @@ type Payslip = {
 
 const thisMonth = () =>
   new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }).slice(0, 7);
-const rupees = (n: number) => `₹${Number(n).toLocaleString("en-IN")}`;
+
+/** Indian grouping, paise only when there are any, and a real minus
+ *  sign (U+2212) rather than a hyphen — straight from the handoff. */
+const inr = (n: number) => {
+  const neg = n < 0;
+  const [int, frac] = Math.abs(n).toFixed(2).split(".");
+  const dec = frac === "00" ? "" : `.${frac}`;
+  let last3 = int.slice(-3);
+  const rest = int.slice(0, -3);
+  if (rest) last3 = `${rest.replace(/\B(?=(\d{2})+(?!\d))/g, ",")},${last3}`;
+  return `${neg ? "−₹" : "₹"}${last3}${dec}`;
+};
+
+/** "2026-08" -> "August 2026" */
+const monthName = (m: string) =>
+  new Date(`${m}-01T00:00:00`).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
 
 export default function Salary() {
   const [month, setMonth] = useState(thisMonth());
@@ -33,6 +48,8 @@ export default function Salary() {
   const [unresolved, setUnresolved] = useState(0);
   const [payGaps, setPayGaps] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
+  const [salSeg, setSalSeg] = useState<"all" | "review" | "zero">("all");
+  const [monthOpen, setMonthOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -162,58 +179,109 @@ export default function Salary() {
     { gross: 0, ded: 0, adv: 0, net: 0 },
   );
 
+  // A day proved by only one of the two sources — the app or the
+  // fingerprint, not both. It is still being paid; the owner is only
+  // being told it rests on one leg.
+  const oneWay = (s: Payslip) => Number(s.data.single_verified_days ?? 0) > 0;
+  const daysPaid = (s: Payslip) =>
+    Number(s.data.worked_days ?? 0) +
+    Number(s.data.rest_days ?? 0) +
+    Number(s.data.paid_leave_days ?? 0);
+  /** what came off, whatever the reason: absence plus advance recovery */
+  const cutOf = (s: Payslip) => Number(s.deductions) + Number(s.advance_cut);
+
+  const reviewCount = slips.filter(oneWay).length;
+  const zeroCount = slips.filter((s) => Number(s.net) === 0).length;
+
+  const shown = [...slips]
+    .filter((s) =>
+      salSeg === "review" ? oneWay(s) : salSeg === "zero" ? Number(s.net) === 0 : true)
+    .sort((a, b) => Number(b.net) - Number(a.net));
+
+  const frozen = run?.status === "CONFIRMED";
+  const showNotice = !!run && !frozen && reviewCount > 0 && salSeg !== "review";
+
   return (
     <div>
-      <div className="page-head">
-        <h1>Salary · {branch?.name ?? ""}</h1>
-        <p>Generate a draft, check it, confirm — advances are recovered automatically.</p>
+      {/* What is owed sits at the top right, because that is the number
+          the owner came for; the controls that change it sit below. */}
+      <div className="sheet-head">
+        <div>
+          <h1>Salary · {branch?.name ?? ""}</h1>
+          <p className="sub">Check the draft, then confirm. Advances come off on their own.</p>
+        </div>
+        {slips.length > 0 && (
+          <div className="big-figure">
+            <div className="amount">{inr(totals.net)}</div>
+            <div className="under">
+              to pay · {slips.length} {slips.length === 1 ? "person" : "people"}
+            </div>
+          </div>
+        )}
       </div>
 
       {error && <div className="banner error" onClick={() => setError(null)}>{error}</div>}
       {notice && <div className="banner info" onClick={() => setNotice(null)}>{notice}</div>}
 
-      {/* Month and the actions that change the run sit together on the
-          left; the run's state and the export — which read rather than
-          act — sit on the right, so the eye lands on one group at a time. */}
-      <div className="card toolbar">
-        <label className="toolbar-month">
-          Month
-          <input type="month" value={month} max={thisMonth()} onChange={(e) => setMonth(e.target.value)} />
-        </label>
-
-        <div className="toolbar-actions">
-          {run?.status !== "CONFIRMED" && (
-            <button className="btn primary" onClick={generate} disabled={busy}>
-              {busy ? "Working…" : run ? "Regenerate draft" : "Generate draft"}
-            </button>
-          )}
-          {run?.status === "DRAFT" && slips.length > 0 && (
-            confirming ? (
-              <>
-                <button className="btn good" onClick={confirm} disabled={busy}>
-                  Yes, freeze this month
-                </button>
-                <button className="btn" onClick={() => setConfirming(false)}>Cancel</button>
-              </>
-            ) : (
-              <button className="btn good" onClick={() => setConfirming(true)} disabled={busy}>
-                Confirm &amp; freeze
+      <div className="seg-row">
+        {slips.length > 0 && (
+          <div className="seg" role="group" aria-label="Which staff to show">
+            {([
+              ["all", `Everyone · ${slips.length}`],
+              ["review", `Needs review · ${reviewCount}`],
+              ["zero", `Nothing to pay · ${zeroCount}`],
+            ] as const).map(([k, label]) => (
+              <button
+                key={k}
+                className={`seg-btn${salSeg === k ? " on" : ""}`}
+                aria-pressed={salSeg === k}
+                onClick={() => setSalSeg(k)}
+              >
+                {label}
               </button>
-            )
+            ))}
+          </div>
+        )}
+
+        <div className="pop-wrap">
+          <button className="pill-btn" onClick={() => setMonthOpen((o) => !o)}>
+            {monthName(month)} ▾
+          </button>
+          {monthOpen && (
+            <>
+              <div className="menu-backdrop" onClick={() => setMonthOpen(false)} />
+              <div className="pop">
+                <label>
+                  Month
+                  <input
+                    type="month"
+                    value={month}
+                    max={thisMonth()}
+                    onChange={(e) => { setMonth(e.target.value); setMonthOpen(false); }}
+                  />
+                </label>
+              </div>
+            </>
           )}
         </div>
 
-        <div className="toolbar-end">
-          <button className="btn" onClick={exportCsv} disabled={slips.length === 0}>
-            ⬇ Export CSV
-          </button>
-          {run && (
-            <span className={`pill ${run.status === "CONFIRMED" ? "good" : "warn"}`}>
-              {run.status === "CONFIRMED" ? "Confirmed" : "Draft — not final"}
-            </span>
-          )}
-        </div>
+        {run && (
+          <span className={`state-pill ${frozen ? "done" : "draft"}`}>
+            {frozen ? "✓ Confirmed" : "● Draft"}
+          </span>
+        )}
       </div>
+
+      {showNotice && (
+        <div className="notice-strip">
+          <span className="notice-mark" aria-hidden="true">!</span>
+          <span className="say">
+            {reviewCount} {reviewCount === 1 ? "person has" : "people have"} a day marked only one
+            way — app or fingerprint, not both. Those days are being paid.
+          </span>
+          <button className="go" onClick={() => setSalSeg("review")}>Review them</button>
+        </div>
+      )}
 
       {payGaps.length > 0 && run?.status !== "CONFIRMED" && (
         <div className="banner warn">
@@ -225,7 +293,7 @@ export default function Salary() {
         </div>
       )}
 
-      {unresolved > 0 && run?.status !== "CONFIRMED" && (
+      {unresolved > 0 && !frozen && !showNotice && (
         <div className="banner warn">
           {unresolved} day{unresolved > 1 ? "s" : ""} this month {unresolved > 1 ? "have" : "has"} only
           single verification (app or fingerprint alone). They count as paid — review them on the
@@ -236,61 +304,112 @@ export default function Salary() {
       {!run && (
         <div className="card">
           <span className="muted">
-            No salary run for this month yet — press "Generate draft" to calculate it from
+            No salary run for this month yet — press "Make draft" to calculate it from
             attendance.
           </span>
         </div>
       )}
 
       {slips.length > 0 && (
-        <table>
+        <table className="pay-table">
           <thead>
             <tr>
               <th>Staff</th>
-              <th>Days paid</th>
-              <th>Unpaid</th>
-              <th>Gross</th>
-              <th>Deduction</th>
-              <th>Advance</th>
-              <th>Net pay</th>
+              <th className="mid" style={{ width: 110 }}>Days paid</th>
+              <th className="end" style={{ width: 130 }}>Cut</th>
+              <th className="end" style={{ width: 150 }}>Take home</th>
+              <th style={{ width: 14 }} />
             </tr>
           </thead>
           <tbody>
-            {slips.map((s) => (
-              <tr key={s.id}>
-                <td>
-                  <strong>{titleCase(s.profiles?.full_name ?? "")}</strong>
-                  {Number(s.data.single_verified_days ?? 0) > 0 && (
-                    <div className="note muted">
-                      incl. {s.data.single_verified_days} single-verified day(s)
-                    </div>
-                  )}
-                  {Number(s.data.missing_days ?? 0) > 0 && (
-                    <div className="note muted">{s.data.missing_days} day(s) with no record</div>
-                  )}
+            {shown.map((s) => {
+              const cut = cutOf(s);
+              return (
+                <tr key={s.id}>
+                  <td>
+                    <span className="pay-staff">
+                      <span className="pay-name">{titleCase(s.profiles?.full_name ?? "")}</span>
+                      {oneWay(s) && (
+                        <span
+                          className="oneway-dot"
+                          title={`${s.data.single_verified_days} day(s) proved only one way`}
+                        />
+                      )}
+                    </span>
+                  </td>
+                  <td className="mid pay-days">{daysPaid(s)}</td>
+                  <td
+                    className="end pay-cut"
+                    title={
+                      cut > 0
+                        ? `Absence ${inr(Number(s.deductions))} · advance ${inr(Number(s.advance_cut))}`
+                        : undefined
+                    }
+                  >
+                    {cut > 0 ? inr(-cut) : "—"}
+                  </td>
+                  <td className="end pay-net">{inr(Number(s.net))}</td>
+                  <td className="end person-chev" aria-hidden="true">›</td>
+                </tr>
+              );
+            })}
+            {shown.length === 0 && (
+              <tr>
+                <td colSpan={5} className="list-empty">
+                  {salSeg === "review"
+                    ? "Every day this month is proved both ways."
+                    : "Everybody has something to be paid."}
                 </td>
-                <td>
-                  {Number(s.data.worked_days ?? 0) + Number(s.data.rest_days ?? 0) +
-                    Number(s.data.paid_leave_days ?? 0)}
-                </td>
-                <td>{s.data.unpaid_days_total ?? 0}</td>
-                <td>{rupees(s.gross)}</td>
-                <td>{Number(s.deductions) > 0 ? `− ${rupees(s.deductions)}` : "—"}</td>
-                <td>{Number(s.advance_cut) > 0 ? `− ${rupees(s.advance_cut)}` : "—"}</td>
-                <td><strong>{rupees(s.net)}</strong></td>
               </tr>
-            ))}
-            <tr>
-              <td><strong>Total</strong></td>
-              <td />
-              <td />
-              <td><strong>{rupees(totals.gross)}</strong></td>
-              <td><strong>{totals.ded > 0 ? `− ${rupees(totals.ded)}` : "—"}</strong></td>
-              <td><strong>{totals.adv > 0 ? `− ${rupees(totals.adv)}` : "—"}</strong></td>
-              <td><strong>{rupees(totals.net)}</strong></td>
-            </tr>
+            )}
           </tbody>
         </table>
+      )}
+
+      {slips.length > 0 && (
+        <div className="sheet-foot">
+          <span className="count">
+            <span className="foot-legend">
+              <span className="oneway-dot" aria-hidden="true" />
+              one-way day · total cut {inr(totals.ded + totals.adv)}
+            </span>
+          </span>
+          <div className="sheet-foot-acts">
+            {!frozen && (
+              <button className="btn" onClick={generate} disabled={busy}>
+                {busy ? "Working…" : run ? "Make draft again" : "Make draft"}
+              </button>
+            )}
+            <button className="btn" onClick={exportCsv} disabled={slips.length === 0}>
+              Download CSV
+            </button>
+            {!frozen && (
+              confirming ? (
+                <>
+                  <button className="btn confirm" onClick={confirm} disabled={busy}>
+                    Yes, confirm &amp; lock
+                  </button>
+                  <button className="btn" onClick={() => setConfirming(false)}>Cancel</button>
+                </>
+              ) : (
+                <button className="btn confirm" onClick={() => setConfirming(true)} disabled={busy}>
+                  Confirm &amp; lock
+                </button>
+              )
+            )}
+          </div>
+        </div>
+      )}
+
+      {!run && (
+        <div className="sheet-foot">
+          <span className="count" />
+          <div className="sheet-foot-acts">
+            <button className="btn primary" onClick={generate} disabled={busy}>
+              {busy ? "Working…" : "Make draft"}
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

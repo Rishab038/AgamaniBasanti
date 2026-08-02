@@ -13,7 +13,7 @@
 // Only staff the owner has switched on (profiles.can_bill) see this,
 // and the database enforces the same rule independently.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator, KeyboardAvoidingView, Platform, RefreshControl,
   ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View,
@@ -21,12 +21,16 @@ import {
 import * as Crypto from "expo-crypto";
 import * as Haptics from "expo-haptics";
 import * as ImageManipulator from "expo-image-manipulator";
-import { Ionicons } from "@expo/vector-icons";
+// Deep import, not the barrel: `from "@expo/vector-icons"` makes
+// Metro bundle the font file of EVERY icon family — thirteen of
+// them, ~4.4 MB — when this app draws Ionicons and nothing else.
+import Ionicons from "@expo/vector-icons/Ionicons";
 import {
   Branch, CreditSale, CustomerBalance, Profile, supabase,
 } from "../../lib/supabase";
 import PhotoCapture from "../../components/PhotoCapture";
-import { colors, fonts, radius, shadow } from "../../lib/theme";
+import { colors, fonts, radius, rowEdge, shadow } from "../../lib/theme";
+import { fmtDay, groupInr } from "../../lib/fmt";
 
 type PayMethod = "CASH" | "UPI" | "CARD" | "BANK" | "OTHER";
 
@@ -54,11 +58,8 @@ const REF_HINT: Record<PayMethod, string> = {
   OTHER: "Any reference",
 };
 
-const rupees = (n: number) => `₹${Math.abs(Number(n)).toLocaleString("en-IN")}`;
-const fmtDay = (ts: string) =>
-  new Date(ts).toLocaleDateString("en-IN", {
-    day: "numeric", month: "short", timeZone: "Asia/Kolkata",
-  });
+// the khata shows magnitudes; direction is carried by the words
+const rupees = (n: number) => `₹${groupInr(Math.abs(Number(n)))}`;
 const digits = (s: string) => s.replace(/[^0-9]/g, "").replace(/^0+(?=\d)/, "");
 
 /** "7 days ago", "4 weeks ago" — how long since anything happened */
@@ -82,6 +83,60 @@ function base64ToBytes(b64: string): Uint8Array {
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   return bytes;
 }
+
+const lastActivity = (c: CustomerBalance) => {
+  const a = c.last_bill_at, b = c.last_payment_at;
+  if (!a) return b;
+  if (!b) return a;
+  return a > b ? a : b;
+};
+
+/**
+ * One line of the customer list.
+ *
+ * Pulled out and memoised because this list is long and sits under a
+ * search box: every keystroke re-rendered all sixty-odd rows, on a phone
+ * that cannot afford it. Now a keystroke re-renders only the rows whose
+ * customer actually changed, which is none of them — the list just gets
+ * shorter.
+ */
+const CustomerRow = memo(function CustomerRow({
+  c,
+  onOpen,
+}: {
+  c: CustomerBalance;
+  onOpen: (c: CustomerBalance) => void;
+}) {
+  const bal = Number(c.balance);
+  return (
+    <TouchableOpacity
+      style={[styles.row, rowEdge]}
+      onPress={() => onOpen(c)}
+      activeOpacity={0.7}
+    >
+      <View style={styles.avatar}>
+        <Text style={styles.avatarText}>{initialsOf(c.name)}</Text>
+      </View>
+      <View style={styles.rowWho}>
+        <Text style={styles.rowName} numberOfLines={1}>{c.name}</Text>
+        <Text style={styles.rowAgo}>{ago(lastActivity(c))}</Text>
+      </View>
+      <View style={styles.rowRight}>
+        <Text style={[
+          styles.rowAmt,
+          bal > 0 && styles.owed,
+          bal < 0 && styles.advance,
+          bal === 0 && styles.clear,
+        ]}>
+          {bal === 0 ? "₹0" : rupees(bal)}
+        </Text>
+        <Text style={styles.rowDir}>
+          {bal > 0 ? "you will get" : bal < 0 ? "you will give" : "settled"}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
+});
 
 const EMPTY_BILL = {
   customer_name: "",
@@ -205,12 +260,13 @@ export default function CreditTab({
     (t, c) => t + (Number(c.balance) < 0 ? -Number(c.balance) : 0), 0,
   );
 
-  const lastActivity = (c: CustomerBalance) => {
-    const a = c.last_bill_at, b = c.last_payment_at;
-    if (!a) return b;
-    if (!b) return a;
-    return a > b ? a : b;
-  };
+  // Stable identity, so CustomerRow's memo actually holds. Without it
+  // every row gets a new onPress on each keystroke in the search box and
+  // the memo never skips anything.
+  const openCustomerPage = useCallback((c: CustomerBalance) => {
+    setOpenCustomer(c);
+    setAgainstSale("");
+  }, []);
 
   const mySales = (cid: string) => sales.filter((s) => s.customer_id === cid);
   const myPayments = (cid: string) =>
@@ -557,38 +613,9 @@ export default function CreditTab({
             )}
 
             {/* Name and amount only — everything else is on their page */}
-            {shown.map((c) => {
-              const bal = Number(c.balance);
-              return (
-                <TouchableOpacity
-                  key={c.id}
-                  style={[styles.row, shadow.card]}
-                  onPress={() => { setOpenCustomer(c); setAgainstSale(""); }}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.avatar}>
-                    <Text style={styles.avatarText}>{initialsOf(c.name)}</Text>
-                  </View>
-                  <View style={styles.rowWho}>
-                    <Text style={styles.rowName} numberOfLines={1}>{c.name}</Text>
-                    <Text style={styles.rowAgo}>{ago(lastActivity(c))}</Text>
-                  </View>
-                  <View style={styles.rowRight}>
-                    <Text style={[
-                      styles.rowAmt,
-                      bal > 0 && styles.owed,
-                      bal < 0 && styles.advance,
-                      bal === 0 && styles.clear,
-                    ]}>
-                      {bal === 0 ? "₹0" : rupees(bal)}
-                    </Text>
-                    <Text style={styles.rowDir}>
-                      {bal > 0 ? "you will get" : bal < 0 ? "you will give" : "settled"}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
+            {shown.map((c) => (
+              <CustomerRow key={c.id} c={c} onOpen={openCustomerPage} />
+            ))}
           </>
         ) : mode === "advance" ? (
           <>
@@ -657,7 +684,7 @@ export default function CreditTab({
               <>
                 <Text style={styles.sectionHead}>Logged by you</Text>
                 {myLogged.map((a) => (
-                  <View key={a.id} style={[styles.row, shadow.card]}>
+                  <View key={a.id} style={[styles.row, rowEdge]}>
                     <View style={styles.rowWho}>
                       <Text style={styles.rowName} numberOfLines={1}>
                         {a.profiles?.full_name ?? "Staff"}

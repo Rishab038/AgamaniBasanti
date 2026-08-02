@@ -40,6 +40,7 @@
   --on-accent: #ffffff;
 
   --good: #4d8a4f;      --good-bg: #e7f0e3;
+  --good-deep: #43793f;  --on-good: #ffffff;
   --amber: #a5622d;     --amber-bg: #fdeede;
   --rose: #8a5560;      --rose-bg: #f0e6e8;
   --serious: #b3402e;   --serious-bg: #f9e7e2;
@@ -58,6 +59,8 @@
   --hover: #fdfaf5;     /* a row or button under the cursor */
   --sunken: #f7f1e8;    /* a quiet field, an opened-out row */
   --code-bg: #f3ece1;   /* monospace runs: codes, references */
+  --stat-calm: #efe7db; /* the one stat card that passes no judgement */
+  --oneway: #e0a48d;    /* a day proved by only one of the two sources */
   --scrim: rgba(28, 22, 18, 0.72);
 
   --r-sm: 6px;
@@ -117,6 +120,8 @@
     --on-accent: #2a1a12;
 
     --good: #7fb782;      --good-bg: #1d2a1d;
+  --good-deep: #93c795;  --on-good: #15220f;
+    --good-deep: #93c795;  --on-good: #15220f;
     --amber: #d69a5e;     --amber-bg: #2e2317;
     --rose: #c48d9a;      --rose-bg: #2b1f23;
     --serious: #e8735c;   --serious-bg: #331c17;
@@ -132,6 +137,8 @@
     --hover: #292118;
     --sunken: #141009;
     --code-bg: #2b231c;
+    --stat-calm: #282019;
+    --oneway: #b3705a;
     --scrim: rgba(0, 0, 0, 0.78);
 
     /* a shadow on near-black shows only if it is nearly opaque */
@@ -176,6 +183,8 @@
   --hover: #292118;
   --sunken: #141009;
   --code-bg: #2b231c;
+  --stat-calm: #282019;
+  --oneway: #b3705a;
   --scrim: rgba(0, 0, 0, 0.78);
 
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.40);
@@ -308,6 +317,17 @@ input:focus, select:focus {
 .btn.good { background: var(--surface); color: var(--good); border-color: var(--line-2); }
 .btn.good:hover { background: var(--good-bg); border-color: var(--good); }
 .btn.soft { background: var(--surface); color: var(--ink-2); border-color: var(--line-2); }
+/* Filled green, for confirming a month's pay. The one action in the app
+   that is neither the ordinary primary nor a danger, and the handoff
+   gives it its own colour so it cannot be pressed by reflex. */
+.btn.confirm {
+  background: var(--good);
+  border-color: var(--good);
+  color: var(--on-good);
+  font-weight: 600;
+  padding: 11px 20px;
+}
+.btn.confirm:hover { background: var(--good-deep); border-color: var(--good-deep); }
 
 /* ---------- shell ---------- */
 .shell { display: flex; min-height: 100vh; }
@@ -415,6 +435,9 @@ input:focus, select:focus {
   gap: 12px;
   margin-bottom: 16px;
 }
+/* These are <button>s now — each one filters the table below to the
+   people it is counting. The card look is unchanged; only the browser's
+   own button styling has to be undone, and a selected state added. */
 .stat {
   border-radius: 12px;
   padding: 15px 18px;
@@ -423,18 +446,54 @@ input:focus, select:focus {
   gap: 2px;
   transition: transform 200ms var(--ease), box-shadow 200ms var(--ease);
   animation: rise-in 280ms var(--ease) backwards;
+
+  border: 0;
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
 }
 .stat:nth-child(2) { animation-delay: 40ms; }
 .stat:nth-child(3) { animation-delay: 80ms; }
+.stat:nth-child(4) { animation-delay: 120ms; }
+.stat:nth-child(5) { animation-delay: 160ms; }
 .stat:hover { transform: translateY(-2px); box-shadow: var(--shadow-2); }
-.stat.good { background: var(--good-bg); }
-.stat.amber { background: var(--amber-bg); }
-.stat.rose { background: var(--rose-bg); }
+.stat:active { transform: translateY(0); }
+.stat:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.stat.good  { background: var(--good-bg);  --stat-tone: var(--good); }
+.stat.amber { background: var(--amber-bg); --stat-tone: var(--amber); }
+.stat.rose  { background: var(--rose-bg);  --stat-tone: var(--rose); }
+/* Lunch is not a verdict on anybody, so it gets a neutral tint rather
+   than borrowing a colour that means good or bad. It needs its own value
+   and cannot reuse --sunken: a recessed surface sits BELOW the page,
+   and in dark mode that made this card read as a hole between four
+   raised ones. Every stat card is a tint away from the page — darker on
+   cream, lighter on near-black — and this one has to follow. */
+.stat.calm  { background: var(--stat-calm); --stat-tone: var(--ink-2); }
+
+/* Selected: a ring in the card's own colour, drawn inside so the grid
+   does not shift by a pixel when it comes and goes. */
+.stat.on { box-shadow: inset 0 0 0 2px var(--stat-tone); }
+.stat.on:hover { box-shadow: inset 0 0 0 2px var(--stat-tone), var(--shadow-2); }
+
 .stat .value { font-size: 34px; font-weight: 500; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; line-height: 1.1; }
-.stat.good .value { color: var(--good); }
+.stat.good .value  { color: var(--good); }
 .stat.amber .value { color: var(--amber); }
-.stat.rose .value { color: var(--rose); }
+.stat.rose .value  { color: var(--rose); }
+.stat.calm .value  { color: var(--ink); }
 .stat .label { font-size: 14px; font-weight: 500; color: var(--ink-2); }
+/* says what a click will do, without adding a second line of chrome */
+.stat .label::after {
+  content: " ›";
+  color: var(--ink-3);
+  opacity: 0;
+  transition: opacity 140ms var(--ease);
+}
+.stat:hover .label::after, .stat.on .label::after { opacity: 1; }
 
 /* ---------- banners & approval card ---------- */
 .banner {
@@ -1598,3 +1657,274 @@ code {
 .theme-btn:hover { color: var(--sidebar-ink-hi); background: var(--sidebar-wash); }
 .theme-btn.active { background: var(--sidebar-wash); color: var(--sidebar-ink); }
 .theme-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* ============================================================
+   ATTENDANCE & SALARY — from the design handoff.
+
+   Two owner screens rebuilt to a supplied high-fidelity spec. Where
+   this follows the spec and where it deliberately does not:
+
+   * COLOUR — the handoff's palette is this system's palette, to the
+     hex: same terracotta, ink, tan, and the same green and amber
+     tints. So these rules use the existing tokens rather than
+     re-declaring literals, which is also what keeps the screens
+     working in dark mode. The handoff is light-only.
+   * TYPE — the handoff asks for Nunito at 700-900. This app left
+     Nunito behind deliberately (see the top of this file), and putting
+     it on two screens out of eight would fracture the dashboard. The
+     weight RELATIONSHIPS are reproduced in Inter: name heavier than
+     meta, figure heavier than its label.
+   * MOTION — the handoff says states switch instantly, because the
+     owner uses this at a shop counter. Honoured; nothing here
+     transitions.
+   ============================================================ */
+
+/* the screen's own header: title and subtitle against an action slot */
+.sheet-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+  margin-bottom: 20px;
+}
+.sheet-head h1 { font-size: 26px; font-weight: 600; letter-spacing: -0.01em; }
+.sheet-head .sub { margin-top: 5px; font-size: 14px; font-weight: 500; color: var(--ink-3); }
+.sheet-head-acts { display: flex; align-items: center; gap: 10px; flex: none; }
+.sheet-head-acts .btn { white-space: nowrap; }
+
+.big-figure { text-align: right; flex: none; }
+.big-figure .amount {
+  font-size: 30px; font-weight: 600; line-height: 1.1;
+  color: var(--ink); font-variant-numeric: tabular-nums;
+}
+.big-figure .under { margin-top: 3px; font-size: 12.5px; font-weight: 500; color: var(--ink-3); }
+
+/* segmented control — one question, three answers */
+.seg-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }
+.seg { display: flex; gap: 2px; padding: 4px; background: var(--sunken); border-radius: 12px; }
+.seg-btn {
+  padding: 8px 15px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--ink-3);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.seg-btn:hover { color: var(--ink); }
+.seg-btn.on {
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(58, 47, 40, 0.12);
+}
+.seg-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.seg-search {
+  flex: 1;
+  min-width: 180px;
+  max-width: 280px;
+  padding: 10px 14px;
+  border-width: 1.5px;
+  border-radius: 11px;
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+/* a pill that opens something — the date range, the month */
+.pill-btn {
+  padding: 9px 15px;
+  border: 1.5px solid var(--line-2);
+  border-radius: 11px;
+  background: var(--surface);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pill-btn:hover { border-color: var(--accent); color: var(--accent); }
+.sheet-head-acts .btn, .sheet-foot-acts .btn { border-radius: 11px; }
+
+.state-pill {
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.state-pill.draft { background: var(--amber-bg); color: var(--amber); }
+.state-pill.done  { background: var(--good-bg);  color: var(--good); }
+
+/* one person, one line */
+.person-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 13px 4px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+.person-row:hover { background: var(--hover); }
+.person-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.avatar {
+  width: 34px; height: 34px;
+  flex: none;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--sunken);
+  color: var(--ink-2);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.person-name { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; color: var(--ink); }
+.person-days {
+  width: 120px; text-align: right;
+  font-size: 13.5px; font-weight: 500; color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.person-tag { width: 118px; display: flex; justify-content: flex-end; }
+.person-chev { width: 14px; text-align: right; font-size: 18px; color: var(--ink-3); }
+
+.tag {
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.tag.miss-all  { background: var(--rose-bg);  color: var(--rose); }
+.tag.miss-some { background: var(--amber-bg); color: var(--amber); }
+.tag.full      { background: var(--good-bg);  color: var(--good); }
+
+/* the strip explaining something the owner should look at */
+.notice-strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 16px;
+  margin-bottom: 18px;
+  border-radius: 12px;
+  background: var(--amber-bg);
+}
+.notice-mark {
+  width: 22px; height: 22px;
+  flex: none;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 13px;
+  font-weight: 600;
+}
+.notice-strip .say { flex: 1; font-size: 13.5px; font-weight: 500; color: var(--amber); }
+.notice-strip .go {
+  border: 0; padding: 0; background: none;
+  font: inherit; font-size: 13px; font-weight: 600;
+  color: var(--accent-deep);
+  text-decoration: underline;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* the bar under a list: what you are looking at, what to do next */
+.sheet-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.sheet-foot .count { font-size: 13px; font-weight: 500; color: var(--ink-3); }
+.sheet-foot-acts { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.foot-legend { display: inline-flex; align-items: center; gap: 7px; }
+
+/* the payroll list. A real table rather than the spec's CSS grid: it
+   is what the handoff's own accessibility note asks for, and fixed
+   column widths cannot drift the way fr tracks did in their revision. */
+.pay-table { width: 100%; border-collapse: collapse; background: none; border: 0; margin: 0; }
+.pay-table th {
+  padding: 0 4px 10px;
+  border-bottom: 1px solid var(--line-2);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.pay-table td {
+  padding: 13px 4px;
+  border-top: 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+  vertical-align: middle;
+}
+.pay-table tbody tr:hover { background: var(--hover); }
+.pay-table .mid { text-align: center; }
+.pay-table .end { text-align: right; }
+.pay-table .pay-name { font-size: 15px; font-weight: 600; color: var(--ink); }
+.pay-days { font-weight: 500; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.pay-cut  { font-weight: 500; color: var(--accent-deep); font-variant-numeric: tabular-nums; }
+.pay-table .pay-net { font-size: 15px; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+.pay-staff { display: flex; align-items: center; gap: 8px; min-width: 0; }
+
+/* the mark against a row carrying a day proved only one way */
+.oneway-dot {
+  display: inline-block;
+  width: 8px; height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--oneway);
+}
+
+.list-empty {
+  padding: 60px 0;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink-3);
+}
+
+/* the range and month popovers these screens open */
+.pop-wrap { position: relative; }
+.pop {
+  position: absolute;
+  z-index: 21;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 240px;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--shadow-3);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.pop label {
+  display: flex; flex-direction: column; gap: 4px;
+  font-size: 12.5px; font-weight: 500; color: var(--ink-2);
+}
+
+@media (max-width: 720px) {
+  .sheet-head { flex-direction: column; }
+  .big-figure { text-align: left; }
+  .person-days, .person-tag { width: auto; }
+}

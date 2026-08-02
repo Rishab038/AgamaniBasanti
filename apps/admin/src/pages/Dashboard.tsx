@@ -26,6 +26,9 @@ type DayRow = {
 /** the lunch break as punched: out, back, or still away */
 type Lunch = { out?: string; back?: string };
 
+/** the five indicators above the table, each of which opens it out */
+type StatKey = "present" | "decision" | "late" | "absent" | "lunch";
+
 type Device = { serial: string; last_seen_at: string | null };
 
 type PendingAdvance = {
@@ -65,6 +68,8 @@ export default function Dashboard() {
   const [staffCount, setStaffCount] = useState(0);
   /** the whole roster, so the owner can mark someone with no row at all */
   const [allStaff, setAllStaff] = useState<{ id: string; full_name: string }[]>([]);
+  /** which indicator is currently opened out; null shows everyone */
+  const [filter, setFilter] = useState<StatKey | null>(null);
   const [markOpen, setMarkOpen] = useState(false);
   const [markWho, setMarkWho] = useState("");
   const [markSearch, setMarkSearch] = useState("");
@@ -343,17 +348,41 @@ export default function Dashboard() {
   // was) and records the ruling in `decision`.
   // MANUAL = the owner vouched for someone who had no phone on them
   const PRESENT = ["VERIFIED", "APP_ONLY", "DEVICE_ONLY", "HALF_DAY", "OVERTIME", "MANUAL"];
-  const present = rows.filter((r) => PRESENT.includes(r.status)).length;
-  const late = rows.filter((r) => r.late_minutes > 0).length;
-  const absent = rows.filter((r) => r.status === "ABSENT").length;
-  // only days still waiting on the owner
-  const needsAttention = rows.filter(
-    (r) =>
+
+  // One predicate per card, so the number on a card and the rows behind
+  // it can never drift apart — the count IS the filtered length.
+  const TESTS: Record<StatKey, (r: DayRow) => boolean> = {
+    present: (r) => PRESENT.includes(r.status),
+    decision: (r) =>
       !r.decision &&
       ((r.review_reasons ?? []).length > 0 ||
         r.status === "APP_ONLY" ||
         r.status === "DEVICE_ONLY"),
-  ).length;
+    late: (r) => r.late_minutes > 0,
+    absent: (r) => r.status === "ABSENT",
+    // out right now: gone to lunch and not yet back
+    lunch: (r) => {
+      const l = lunches[r.profile_id];
+      return !!l?.out && !l?.back;
+    },
+  };
+
+  const count = (k: StatKey) => rows.filter(TESTS[k]).length;
+  const shown = filter ? rows.filter(TESTS[filter]) : rows;
+
+  const CARDS: { key: StatKey; tone: string; label: string; empty: string }[] = [
+    { key: "present", tone: "good", label: "Checked in today",
+      empty: "Nobody has checked in yet." },
+    { key: "decision", tone: "amber", label: "Need your decision",
+      empty: "Nothing is waiting on you." },
+    { key: "late", tone: "amber", label: "Late today",
+      empty: "Everybody who came in was on time." },
+    { key: "absent", tone: "rose", label: "Absent",
+      empty: "Nobody is marked absent." },
+    { key: "lunch", tone: "calm", label: "Out for lunch",
+      empty: "Nobody is out for lunch right now." },
+  ];
+  const openCard = CARDS.find((c) => c.key === filter);
   const visibleAdvances = advances.filter((a) => !dismissed.includes(a.id));
 
   /** 81 -> "1h 21m late", 25 -> "25 min late" */
@@ -428,23 +457,21 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* Each indicator opens the table below out to just the people it
+          is counting. Clicking the same one again puts everybody back. */}
       <div className="stats">
-        <div className="stat good">
-          <div className="value">{present}</div>
-          <div className="label">Checked in today</div>
-        </div>
-        <div className="stat amber">
-          <div className="value">{needsAttention}</div>
-          <div className="label">Need your decision</div>
-        </div>
-        <div className="stat amber">
-          <div className="value">{late}</div>
-          <div className="label">Late today</div>
-        </div>
-        <div className="stat rose">
-          <div className="value">{absent}</div>
-          <div className="label">Absent</div>
-        </div>
+        {CARDS.map((c) => (
+          <button
+            key={c.key}
+            type="button"
+            className={`stat ${c.tone}${filter === c.key ? " on" : ""}`}
+            onClick={() => setFilter(filter === c.key ? null : c.key)}
+            aria-pressed={filter === c.key}
+          >
+            <div className="value">{count(c.key)}</div>
+            <div className="label">{c.label}</div>
+          </button>
+        ))}
       </div>
 
       {/* The phone-at-home case. Deliberately near the table rather than
@@ -455,12 +482,19 @@ export default function Dashboard() {
           count is the reason you would reach for it. */}
       <div className="table-head">
         <div className="table-head-text">
-          <h2>Today's attendance</h2>
-          {notOnPageToday.length > 0 && (
+          <h2>{openCard ? openCard.label : "Today's attendance"}</h2>
+          {openCard ? (
+            <span className="muted">
+              {shown.length} of {rows.length} shown ·{" "}
+              <button className="link-btn" onClick={() => setFilter(null)}>
+                show everyone
+              </button>
+            </span>
+          ) : notOnPageToday.length > 0 ? (
             <span className="muted">
               {notOnPageToday.length} of {staffCount} have not appeared yet
             </span>
-          )}
+          ) : null}
         </div>
         <button
           className="btn"
@@ -548,14 +582,16 @@ export default function Dashboard() {
           </tr>
         </thead>
         <tbody>
-          {rows.length === 0 && (
+          {shown.length === 0 && (
             <tr>
               <td colSpan={7} className="empty-cell">
-                Nothing yet — staff appear here the moment they check in.
+                {openCard
+                  ? openCard.empty
+                  : "Nothing yet — staff appear here the moment they check in."}
               </td>
             </tr>
           )}
-          {rows.map((r) => {
+          {shown.map((r) => {
             const appTime = fmtTime(appFirst[r.profile_id]);
             const devTime =
               r.profiles?.device_enroll_no != null

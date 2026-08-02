@@ -20,9 +20,11 @@ import {
 import * as Haptics from "expo-haptics";
 import { Profile, supabase } from "../../lib/supabase";
 import { colors, fonts, radius, shadow } from "../../lib/theme";
+import { groupInr } from "../../lib/fmt";
 import type { SharedData } from "../MainScreen";
 
-const rupees = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`;
+// advances are shown to the nearest rupee
+const rupees = (n: number) => `₹${groupInr(Math.round(n))}`;
 
 export default function MoneyTab({ profile, data }: { profile: Profile; data: SharedData }) {
   const [askOpen, setAskOpen] = useState(false);

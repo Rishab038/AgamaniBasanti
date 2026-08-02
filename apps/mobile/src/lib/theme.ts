@@ -43,26 +43,44 @@ export const fonts = {
 
 export const radius = { sm: 12, md: 16, lg: 22, pill: 999 };
 
+// Shadows are the most expensive thing this app draws on a cheap phone.
+// On Android every `elevation` promotes the view to its own layer and
+// makes the system render a blur underneath it; a list of them costs a
+// full redraw of overlapping layers on each scroll frame, and a shadow
+// on a view that ANIMATES has to be re-rasterized every frame of the
+// animation. The radii here were 22 with elevation 12, on the check-in
+// button, which scales on press — the single most-touched control in
+// the app, doing the most expensive thing available to it, 60 times a
+// second. These are the same shapes at a fraction of the cost.
 export const shadow = {
   card: {
     shadowColor: "#3a2f28",
     shadowOpacity: 0.07,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 5 },
-    elevation: 3,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
   },
   button: {
     shadowColor: "#c65f3f",
-    shadowOpacity: 0.4,
-    shadowRadius: 22,
-    shadowOffset: { width: 0, height: 12 },
-    elevation: 12,
+    shadowOpacity: 0.32,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 4,
   },
   buttonGood: {
     shadowColor: "#4d8a4f",
-    shadowOpacity: 0.4,
-    shadowRadius: 22,
-    shadowOffset: { width: 0, height: 12 },
-    elevation: 12,
+    shadowOpacity: 0.32,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 4,
   },
+};
+
+// What a repeated row gets instead of a shadow. A hairline costs one
+// cheap rect; sixty elevated layers in a scroll view is what made the
+// lists stutter. Reserve `shadow.card` for surfaces there is only one
+// of on screen — a summary panel, an open sheet.
+export const rowEdge = {
+  borderWidth: 1,
+  borderColor: colors.line,
 };

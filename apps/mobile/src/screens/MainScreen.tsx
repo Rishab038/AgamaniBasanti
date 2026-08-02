@@ -2,10 +2,13 @@
 // shared data every tab needs — this month's attendance, today's
 // punches, and advances.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppState, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import * as Updates from "expo-updates";
-import { Ionicons } from "@expo/vector-icons";
+// Deep import, not the barrel: `from "@expo/vector-icons"` makes
+// Metro bundle the font file of EVERY icon family — thirteen of
+// them, ~4.4 MB — when this app draws Ionicons and nothing else.
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { Branch, Profile, supabase } from "../lib/supabase";
 import { drain, pendingCount } from "../lib/queue";
 import { registerForPush } from "../lib/push";
@@ -205,9 +208,14 @@ export default function MainScreen({
     return () => sub.remove();
   }, [reload]);
 
-  const shared: SharedData = {
-    monthDays, todayPunches, advances, advancePaid, lateSyncDates, pending, reload,
-  };
+  // A fresh object here meant every tab saw a new `data` prop on every
+  // render of this screen — including ones that changed nothing it uses
+  // — and re-rendered its whole list. Now the identity only changes when
+  // the contents do.
+  const shared: SharedData = useMemo(
+    () => ({ monthDays, todayPunches, advances, advancePaid, lateSyncDates, pending, reload }),
+    [monthDays, todayPunches, advances, advancePaid, lateSyncDates, pending, reload],
+  );
 
   const visibleTabs = TABS.filter((t) => t.key !== "credit" || profile.can_bill);
 

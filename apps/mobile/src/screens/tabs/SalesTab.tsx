@@ -23,9 +23,13 @@ import {
 } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Haptics from "expo-haptics";
-import { Ionicons } from "@expo/vector-icons";
+// Deep import, not the barrel: `from "@expo/vector-icons"` makes
+// Metro bundle the font file of EVERY icon family — thirteen of
+// them, ~4.4 MB — when this app draws Ionicons and nothing else.
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { Branch, Profile, supabase } from "../../lib/supabase";
 import { colors, fonts, radius, shadow } from "../../lib/theme";
+import { fmtClock as fmtTime, groupInr, istToday } from "../../lib/fmt";
 
 type Line = {
   id: string;
@@ -42,12 +46,8 @@ const BARCODE_TYPES = [
   "ean13", "ean8", "upc_a", "upc_e", "code128", "code39", "code93", "itf14", "codabar",
 ] as const;
 
-const rupees = (n: number) => `₹${Number(n).toLocaleString("en-IN")}`;
-const istToday = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-const fmtTime = (ts: string) =>
-  new Date(ts).toLocaleTimeString("en-IN", {
-    hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata",
-  });
+// this tab shows exact amounts, so no rounding and no abs
+const rupees = (n: number) => `₹${groupInr(Number(n))}`;
 
 /** a price as typed: digits only, no leading zeros */
 const money = (s: string) => s.replace(/[^0-9]/g, "").replace(/^0+(?=\d)/, "");
