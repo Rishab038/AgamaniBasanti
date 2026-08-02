@@ -9,9 +9,14 @@ import {
   BadgeCheck,
   ReceiptIndianRupee,
   NotebookPen,
+  ScanBarcode,
+  Sun,
+  Moon,
+  Monitor,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useBranch } from "../lib/branch";
+import { useTheme, type Theme } from "../lib/theme";
 
 export default function Layout() {
   const location = useLocation();
@@ -46,6 +51,7 @@ export default function Layout() {
     { to: "/attendance", label: "Attendance", icon: CalendarCheck2 },
     { to: "/approvals", label: "Approvals", icon: BadgeCheck, count: pendingCount },
     { to: "/credit", label: "Credit", icon: NotebookPen, count: creditCount },
+    { to: "/sales", label: "Sales", icon: ScanBarcode },
     { to: "/salary", label: "Salary", icon: ReceiptIndianRupee },
     { to: "/settings", label: "Settings", icon: Settings2 },
   ];
@@ -89,6 +95,7 @@ export default function Layout() {
             </NavLink>
           ))}
         </nav>
+        <ThemePicker />
         <button className="logout" onClick={() => supabase.auth.signOut()}>
           <LogOut size={15} />
           Log out
@@ -99,6 +106,35 @@ export default function Layout() {
           <Outlet />
         </div>
       </main>
+    </div>
+  );
+}
+
+/* Three buttons rather than one that cycles: a cycling control makes the
+   owner click and watch to find out what it does, and there is no room
+   on a sidebar for a legend explaining the order. */
+function ThemePicker() {
+  const { theme, setTheme } = useTheme();
+  const options: { key: Theme; label: string; Icon: typeof Sun }[] = [
+    { key: "light", label: "Light", Icon: Sun },
+    { key: "dark", label: "Dark", Icon: Moon },
+    { key: "system", label: "Match this computer", Icon: Monitor },
+  ];
+  return (
+    <div className="theme-switch" role="group" aria-label="Appearance">
+      {options.map(({ key, label, Icon }) => (
+        <button
+          key={key}
+          type="button"
+          className={`theme-btn${theme === key ? " active" : ""}`}
+          onClick={() => setTheme(key)}
+          title={label}
+          aria-label={label}
+          aria-pressed={theme === key}
+        >
+          <Icon size={15} />
+        </button>
+      ))}
     </div>
   );
 }

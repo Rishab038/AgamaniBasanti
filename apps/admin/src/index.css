@@ -37,13 +37,28 @@
   --accent: #d96f4e;
   --accent-deep: #c65f3f;
   --accent-soft: #fdeee7;
+  --on-accent: #ffffff;
 
   --good: #4d8a4f;      --good-bg: #e7f0e3;
   --amber: #a5622d;     --amber-bg: #fdeede;
   --rose: #8a5560;      --rose-bg: #f0e6e8;
   --serious: #b3402e;   --serious-bg: #f9e7e2;
 
+  /* The sidebar is dark in both themes, so it carries its own four
+     steps rather than borrowing the page's. */
   --sidebar: #3a2f28;
+  --sidebar-ink: #efe6dc;
+  --sidebar-ink-2: #b8a493;
+  --sidebar-ink-hi: #f5ede4;
+  --sidebar-line: #55463a;
+  --sidebar-wash: rgba(255, 255, 255, 0.07);
+  --logo-plate: #ffffff;
+
+  /* the three surfaces that are neither page nor card */
+  --hover: #fdfaf5;     /* a row or button under the cursor */
+  --sunken: #f7f1e8;    /* a quiet field, an opened-out row */
+  --code-bg: #f3ece1;   /* monospace runs: codes, references */
+  --scrim: rgba(28, 22, 18, 0.72);
 
   --r-sm: 6px;
   --r: 8px;
@@ -54,6 +69,118 @@
   --shadow-3: 0 12px 32px -8px rgba(58, 47, 40, 0.18);
 
   --ease: cubic-bezier(0.2, 0, 0, 1);
+
+  color-scheme: light;
+}
+
+/* ============================================================
+   DARK
+
+   Not the light palette inverted. Cream going to grey would have
+   thrown away the warmth that is the whole identity of the thing, so
+   the ground is a warm near-black and every neutral keeps its brown
+   cast. Two adjustments the inversion would have got wrong:
+
+   * The accent gets LIGHTER, not darker. Terracotta at #d96f4e has
+     enough contrast on cream and nowhere near enough on near-black.
+   * Hover goes lighter than the surface, and sunken goes darker. In
+     light mode both are "less white"; in dark they part company, and
+     using one value for both makes recessed and raised look identical.
+
+   The sidebar stays dark in both themes. Here it sits LIGHTER than the
+   page, which is what makes it read as a panel rather than a hole.
+   ============================================================ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { color-scheme: dark; }
+}
+:root[data-theme="dark"] { color-scheme: dark; }
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #17130f;
+    --surface: #201a15;
+    --line: #302720;
+    --line-2: #40342b;
+
+    --ink: #f2e9df;
+    --ink-2: #c2b1a0;
+    /* #90806f read fine on the page but fell to 4.05:1 on the tinted
+       surfaces — hover rows, code chips — where most of the muted text
+       actually sits. This clears 4.5:1 on all four. */
+    --ink-3: #a08f7d;
+
+    --accent: #e5825f;
+    --accent-deep: #f0977a;
+    --accent-soft: #33221b;
+    /* White on this terracotta is 2.7:1 — unreadable. Dark ink on it is
+       6.1:1, which is why a lit button in a dark room carries dark text. */
+    --on-accent: #2a1a12;
+
+    --good: #7fb782;      --good-bg: #1d2a1d;
+    --amber: #d69a5e;     --amber-bg: #2e2317;
+    --rose: #c48d9a;      --rose-bg: #2b1f23;
+    --serious: #e8735c;   --serious-bg: #331c17;
+
+    --sidebar: #241d18;
+    --sidebar-ink: #f2e9df;
+    --sidebar-ink-2: #a2907f;
+    --sidebar-ink-hi: #f7f0e8;
+    --sidebar-line: #3a2f27;
+    --sidebar-wash: rgba(255, 255, 255, 0.06);
+    --logo-plate: #f2eae1;
+
+    --hover: #292118;
+    --sunken: #141009;
+    --code-bg: #2b231c;
+    --scrim: rgba(0, 0, 0, 0.78);
+
+    /* a shadow on near-black shows only if it is nearly opaque */
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.40);
+    --shadow-2: 0 4px 12px -2px rgba(0, 0, 0, 0.55);
+    --shadow-3: 0 12px 32px -8px rgba(0, 0, 0, 0.70);
+  }
+}
+
+/* The same palette again, this time because the owner asked for it
+   rather than because the machine did. Written out in full instead of
+   sharing a class with the block above, so that choosing light on a
+   machine set to dark actually wins. */
+:root[data-theme="dark"] {
+  --bg: #17130f;
+  --surface: #201a15;
+  --line: #302720;
+  --line-2: #40342b;
+
+  --ink: #f2e9df;
+  --ink-2: #c2b1a0;
+  --ink-3: #a08f7d;
+
+  --accent: #e5825f;
+  --accent-deep: #f0977a;
+  --accent-soft: #33221b;
+  --on-accent: #2a1a12;
+
+  --good: #7fb782;      --good-bg: #1d2a1d;
+  --amber: #d69a5e;     --amber-bg: #2e2317;
+  --rose: #c48d9a;      --rose-bg: #2b1f23;
+  --serious: #e8735c;   --serious-bg: #331c17;
+
+  --sidebar: #241d18;
+  --sidebar-ink: #f2e9df;
+  --sidebar-ink-2: #a2907f;
+  --sidebar-ink-hi: #f7f0e8;
+  --sidebar-line: #3a2f27;
+  --sidebar-wash: rgba(255, 255, 255, 0.06);
+  --logo-plate: #f2eae1;
+
+  --hover: #292118;
+  --sunken: #141009;
+  --code-bg: #2b231c;
+  --scrim: rgba(0, 0, 0, 0.78);
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.40);
+  --shadow-2: 0 4px 12px -2px rgba(0, 0, 0, 0.55);
+  --shadow-3: 0 12px 32px -8px rgba(0, 0, 0, 0.70);
 }
 
 html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
@@ -143,7 +270,7 @@ input:hover, select:hover { border-color: var(--ink-3); }
 input:focus, select:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(217, 111, 78, 0.16);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 /* ---------- buttons ---------- */
@@ -167,15 +294,15 @@ input:focus, select:focus {
   transition: background 140ms var(--ease), border-color 140ms var(--ease),
               transform 80ms var(--ease);
 }
-.btn:hover { background: #fdfaf5; border-color: var(--ink-3); }
+.btn:hover { background: var(--hover); border-color: var(--ink-3); }
 .btn:active { transform: scale(0.97); }
 .btn:disabled { opacity: 0.45; cursor: default; transform: none; box-shadow: none; }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .btn.primary:hover { background: var(--accent-deep); border-color: var(--accent-deep); }
-.btn.danger { color: var(--serious); border-color: #ecc5ba; }
+.btn.danger { color: var(--serious); border-color: color-mix(in srgb, var(--serious) 34%, transparent); }
 .btn.danger:hover { background: var(--serious-bg); }
 .btn.small { padding: 5px 10px; font-size: 12.5px; }
-.btn.small.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn.small.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 .btn.block { width: 100%; justify-content: center; padding: 10px; font-size: 14px; }
 /* soft/good/danger variants are now quiet text, not filled colour */
 .btn.good { background: var(--surface); color: var(--good); border-color: var(--line-2); }
@@ -187,7 +314,7 @@ input:focus, select:focus {
 .sidebar {
   width: 240px;
   background: var(--sidebar);
-  color: #efe6dc;
+  color: var(--sidebar-ink);
   padding: 26px 16px;
   display: flex;
   flex-direction: column;
@@ -202,7 +329,7 @@ input:focus, select:focus {
 .brand-logo {
   width: 100%;
   max-width: 190px;
-  background: #fff;
+  background: var(--logo-plate);
   border-radius: 10px;
   padding: 8px 10px;
   display: block;
@@ -217,7 +344,7 @@ input:focus, select:focus {
   display: flex;
   align-items: center;
   gap: 11px;
-  color: #b8a493;
+  color: var(--sidebar-ink-2);
   text-decoration: none;
   padding: 11px 14px;
   border-radius: 13px;
@@ -226,17 +353,17 @@ input:focus, select:focus {
   transition: background 160ms var(--ease), color 160ms var(--ease), transform 100ms var(--ease);
 }
 .nav svg { width: 17px; height: 17px; }
-.nav:hover { background: rgba(255, 255, 255, 0.07); color: #f5ede4; }
+.nav:hover { background: var(--sidebar-wash); color: var(--sidebar-ink-hi); }
 .nav:active { transform: scale(0.98); }
 .nav.active {
   background: var(--accent);
-  color: #fff;
-  box-shadow: 0 6px 16px -6px rgba(217, 111, 78, 0.7);
+  color: var(--on-accent);
+  box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--accent) 65%, transparent);
 }
 .nav .count {
   margin-left: auto;
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-size: 11px;
   font-weight: 500;
   border-radius: 999px;
@@ -252,8 +379,8 @@ input:focus, select:focus {
 .logout {
   display: flex; align-items: center; gap: 10px; justify-content: center;
   background: none;
-  border: 1px solid #55463a;
-  color: #b8a493;
+  border: 1px solid var(--sidebar-line);
+  color: var(--sidebar-ink-2);
   padding: 10px;
   border-radius: 13px;
   cursor: pointer;
@@ -262,7 +389,7 @@ input:focus, select:focus {
   font-family: inherit;
   transition: background 160ms var(--ease), color 160ms var(--ease);
 }
-.logout:hover { background: rgba(255, 255, 255, 0.07); color: #f5ede4; }
+.logout:hover { background: var(--sidebar-wash); color: var(--sidebar-ink-hi); }
 
 /* Full-bleed: tables and cards use the whole window rather than sitting
    in a 1180px column with dead space beside them. Padding scales up on
@@ -324,9 +451,9 @@ input:focus, select:focus {
   animation: slide-down 240ms var(--ease);
 }
 .banner svg { width: 16px; height: 16px; flex-shrink: 0; }
-.banner.warn { background: var(--amber-bg); color: var(--amber); border-color: #f5d9bd; }
-.banner.info { background: var(--good-bg); color: var(--good); border-color: #d3e3cd; }
-.banner.error { background: var(--serious-bg); color: var(--serious); border-color: #eec9bd; }
+.banner.warn { background: var(--amber-bg); color: var(--amber); border-color: color-mix(in srgb, var(--amber) 34%, transparent); }
+.banner.info { background: var(--good-bg); color: var(--good); border-color: color-mix(in srgb, var(--good) 34%, transparent); }
+.banner.error { background: var(--serious-bg); color: var(--serious); border-color: color-mix(in srgb, var(--serious) 34%, transparent); }
 
 .approval-card {
   display: flex;
@@ -463,7 +590,7 @@ th {
 }
 tr + tr td { border-top: 1px solid var(--line); }
 tbody tr { transition: background 140ms var(--ease); }
-tbody tr:hover { background: #fdfaf5; }
+tbody tr:hover { background: var(--hover); }
 td { font-size: 13.5px; font-weight: 400; color: var(--ink); }
 
 /* ---------- status pills ---------- */
@@ -752,7 +879,7 @@ td { font-size: 13.5px; font-weight: 400; color: var(--ink); }
   position: fixed;
   inset: 0;
   z-index: 60;
-  background: rgba(28, 22, 18, 0.72);
+  background: var(--scrim);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -919,7 +1046,7 @@ td { font-size: 13.5px; font-weight: 400; color: var(--ink); }
   padding: 6px 8px;
   font-size: 13.5px;
   border-color: transparent;
-  background: #f7f1e8;
+  background: var(--sunken);
 }
 .enroll-input:hover { border-color: var(--line-2); background: var(--surface); }
 .enroll-input:focus { background: var(--surface); }
@@ -1063,7 +1190,7 @@ td { font-size: 13.5px; font-weight: 400; color: var(--ink); }
   border: none;
   border-radius: 999px;
   background: none;
-  color: #b8a493;
+  color: var(--sidebar-ink-2);
   font-family: inherit;
   font-size: 13px;
   font-weight: 500;
@@ -1073,10 +1200,10 @@ td { font-size: 13.5px; font-weight: 400; color: var(--ink); }
   text-overflow: ellipsis;
   transition: background 160ms var(--ease), color 160ms var(--ease);
 }
-.branch-btn:hover { color: #f5ede4; }
-.branch-btn.active { background: var(--accent); color: #fff; }
+.branch-btn:hover { color: var(--sidebar-ink-hi); }
+.branch-btn.active { background: var(--accent); color: var(--on-accent); }
 .branch-single {
-  color: #b8a493;
+  color: var(--sidebar-ink-2);
   font-size: 12.5px;
   font-weight: 500;
   padding: 0 10px 14px;
@@ -1161,7 +1288,7 @@ tr.clickable:hover .row-go { opacity: 1; }
 }
 .decide-cancel:hover { color: var(--ink); }
 
-.edit-cell { background: #fafafa; padding: 0 !important; }
+.edit-cell { background: var(--sunken); padding: 0 !important; }
 .edit-panel {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -1190,7 +1317,7 @@ tr.clickable:hover .row-go { opacity: 1; }
   padding: 6px 12px;
 }
 code {
-  background: #f3ece1;
+  background: var(--code-bg);
   padding: 1px 6px;
   border-radius: 6px;
   font-size: 12.5px;
@@ -1343,7 +1470,7 @@ code {
    still reads as one day rather than as a second table. */
 .day-row { cursor: pointer; }
 .day-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.day-row.open { background: #fdfaf5; }
+.day-row.open { background: var(--hover); }
 .day-caret {
   display: inline-block;
   width: 14px;
@@ -1356,7 +1483,7 @@ code {
    row divider is dropped between the two — the entries carry their own */
 .day-detail > td {
   padding: 0 !important;
-  background: #fdfaf5;
+  background: var(--hover);
   border-top: 0 !important;
 }
 .dt-list {
@@ -1442,3 +1569,32 @@ code {
   line-height: 1.4;
   color: var(--ink-3);
 }
+
+/* ---------- appearance switch ---------- */
+/* Sits in the sidebar above Log out, styled like the branch switch it
+   lives beside so it reads as another quiet setting rather than a
+   feature. */
+.theme-switch {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  margin-bottom: 8px;
+  background: rgba(0, 0, 0, 0.22);
+  border-radius: var(--r-lg);
+}
+.theme-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 0;
+  background: none;
+  border: 0;
+  border-radius: 9px;
+  color: var(--sidebar-ink-2);
+  cursor: pointer;
+  transition: background 140ms var(--ease), color 140ms var(--ease);
+}
+.theme-btn:hover { color: var(--sidebar-ink-hi); background: var(--sidebar-wash); }
+.theme-btn.active { background: var(--sidebar-wash); color: var(--sidebar-ink); }
+.theme-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }

@@ -11,6 +11,19 @@
       rel="stylesheet"
     />
     <title>Agamani — Shop Dashboard</title>
+    <!-- lets the browser draw date pickers, scrollbars and autofill to
+         match the theme; without it the calendar popup stays white -->
+    <meta name="color-scheme" content="light dark" />
+    <script>
+      // Runs before the first paint. React mounting a moment later would
+      // be a moment too late — the page would flash cream, then go dark.
+      try {
+        var t = localStorage.getItem("agamani-theme");
+        if (t === "dark" || t === "light") document.documentElement.dataset.theme = t;
+      } catch (e) {
+        /* private mode, or storage disabled — fall back to the system setting */
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

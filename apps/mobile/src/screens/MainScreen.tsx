@@ -14,6 +14,7 @@ import HomeTab from "./tabs/HomeTab";
 import AttendanceTab from "./tabs/AttendanceTab";
 import MoneyTab from "./tabs/MoneyTab";
 import CreditTab from "./tabs/CreditTab";
+import SalesTab from "./tabs/SalesTab";
 
 export type DayRecord = { work_date: string; status: string; late_minutes: number };
 export type PunchKind = "ARRIVAL" | "LUNCH_OUT" | "LUNCH_IN" | "DEPARTURE";
@@ -46,8 +47,10 @@ const TABS = [
   { key: "home", label: "Home", icon: "home-outline", iconOn: "home" },
   { key: "attendance", label: "Attendance", icon: "calendar-outline", iconOn: "calendar" },
   { key: "money", label: "Money", icon: "wallet-outline", iconOn: "wallet" },
+  // Everyone sells, so everyone logs.
+  { key: "sales", label: "Sales", icon: "barcode-outline", iconOn: "barcode" },
   // Only for whoever the owner has put on the billing counter — see
-  // the filter below. A fourth tab on every worker's phone would be a
+  // the filter below. A fifth tab on every worker's phone would be a
   // permanent locked door for the 34 people who cannot use it.
   { key: "credit", label: "Credit", icon: "receipt-outline", iconOn: "receipt" },
 ] as const;
@@ -221,6 +224,7 @@ export default function MainScreen({
         {tab === "home" && <HomeTab profile={profile} branch={branch} data={shared} />}
         {tab === "attendance" && <AttendanceTab data={shared} />}
         {tab === "money" && <MoneyTab profile={profile} data={shared} />}
+        {tab === "sales" && <SalesTab profile={profile} branch={branch} />}
         {tab === "credit" && <CreditTab profile={profile} branch={branch} />}
       </View>
 
@@ -239,7 +243,15 @@ export default function MainScreen({
                 size={22}
                 color={active ? colors.accent : colors.ink3}
               />
-              <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{t.label}</Text>
+              {/* five tabs leave "Attendance" about 70px; shrink rather
+                  than wrap, so the bar stays one line high */}
+              <Text
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                style={[styles.tabLabel, active && styles.tabLabelActive]}
+              >
+                {t.label}
+              </Text>
             </TouchableOpacity>
           );
         })}

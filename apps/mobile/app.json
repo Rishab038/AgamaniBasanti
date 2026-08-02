@@ -11,7 +11,7 @@
       "bundleIdentifier": "com.agamani.staff",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Attendance check-in only works when you are at the shop, so the app needs your location at that moment.",
-        "NSCameraUsageDescription": "A quick photo at check-in confirms you are at the shop when the location check is unclear, and the counter uses the camera to photograph bills and payment receipts.",
+        "NSCameraUsageDescription": "A quick photo at check-in confirms you are at the shop when the location check is unclear, the counter uses the camera to photograph bills and payment receipts, and staff scan the barcode on a product to log what they have sold.",
         "NSPhotoLibraryUsageDescription": "Pick a payment screenshot from your photos as proof that a customer has paid.",
         "ITSAppUsesNonExemptEncryption": false
       }

@@ -13,6 +13,7 @@ import Credit from "./pages/Credit";
 import CreditCustomer from "./pages/CreditCustomer";
 import Settings from "./pages/Settings";
 import Salary from "./pages/Salary";
+import Sales from "./pages/Sales";
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -40,6 +41,7 @@ export default function App() {
             <Route path="approvals" element={<Approvals />} />
             <Route path="credit" element={<Credit />} />
             <Route path="credit/:id" element={<CreditCustomer />} />
+            <Route path="sales" element={<Sales />} />
             <Route path="salary" element={<Salary />} />
             <Route path="settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
