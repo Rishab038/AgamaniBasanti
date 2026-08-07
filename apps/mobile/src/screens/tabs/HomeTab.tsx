@@ -304,6 +304,17 @@ export default function HomeTab({
           </Text>
         </View>
       )}
+      {/* Different problem, different words. These are not waiting on a
+          network, so telling the worker to wait for one leaves them
+          pressing the button again and again. */}
+      {data.stuck > 0 && (
+        <View style={styles.noticeAmber}>
+          <Text style={styles.noticeAmberText}>
+            {data.stuck} check-in{data.stuck > 1 ? "s" : ""} could not be sent. Your other
+            entries are fine — please show this message to the owner.
+          </Text>
+        </View>
+      )}
       {blocked && (
         <Pressable style={styles.noticeRed} onPress={() => setBlocked(null)}>
           <Text style={styles.noticeRedText}>{blocked}</Text>

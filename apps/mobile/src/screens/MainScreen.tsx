@@ -10,14 +10,13 @@ import * as Updates from "expo-updates";
 // them, ~4.4 MB — when this app draws Ionicons and nothing else.
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { Branch, Profile, supabase } from "../lib/supabase";
-import { drain, pendingCount } from "../lib/queue";
+import { drain, pendingCount, stuckCount } from "../lib/queue";
 import { registerForPush } from "../lib/push";
 import { colors, fonts, radius, shadow } from "../lib/theme";
 import HomeTab from "./tabs/HomeTab";
 import AttendanceTab from "./tabs/AttendanceTab";
 import MoneyTab from "./tabs/MoneyTab";
 import CreditTab from "./tabs/CreditTab";
-import SalesTab from "./tabs/SalesTab";
 
 export type DayRecord = { work_date: string; status: string; late_minutes: number };
 export type PunchKind = "ARRIVAL" | "LUNCH_OUT" | "LUNCH_IN" | "DEPARTURE";
@@ -41,6 +40,8 @@ export type SharedData = {
   advancePaid: number;
   lateSyncDates: Set<string>;
   pending: number;
+  /** punches the server kept refusing — not a network problem */
+  stuck: number;
   reload: () => Promise<void>;
 };
 
@@ -50,12 +51,16 @@ const TABS = [
   { key: "home", label: "Home", icon: "home-outline", iconOn: "home" },
   { key: "attendance", label: "Attendance", icon: "calendar-outline", iconOn: "calendar" },
   { key: "money", label: "Money", icon: "wallet-outline", iconOn: "wallet" },
-  // Everyone sells, so everyone logs.
-  { key: "sales", label: "Sales", icon: "barcode-outline", iconOn: "barcode" },
   // Only for whoever the owner has put on the billing counter — see
-  // the filter below. A fifth tab on every worker's phone would be a
+  // the filter below. A fourth tab on every worker's phone would be a
   // permanent locked door for the 34 people who cannot use it.
   { key: "credit", label: "Credit", icon: "receipt-outline", iconOn: "receipt" },
+
+  // Sales sat here and is parked until the Oriel link exists. The screen
+  // itself is kept, in tabs/SalesTab.tsx — nothing imports it, so Metro
+  // leaves it out of the bundle entirely and it costs nothing to keep.
+  // Putting it back is this entry, its import, and one render line below:
+  //   { key: "sales", label: "Sales", icon: "barcode-outline", iconOn: "barcode" },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -74,6 +79,7 @@ export default function MainScreen({
   const [advancePaid, setAdvancePaid] = useState(0);
   const [lateSyncDates, setLateSyncDates] = useState<Set<string>>(new Set());
   const [pending, setPending] = useState(0);
+  const [stuck, setStuck] = useState(0);
 
   const reload = useCallback(async () => {
     try {
@@ -132,6 +138,7 @@ export default function MainScreen({
       // offline — keep whatever we already have
     }
     setPending(pendingCount());
+    setStuck(stuckCount());
   }, [profile.id]);
 
   useEffect(() => {
@@ -213,8 +220,8 @@ export default function MainScreen({
   // — and re-rendered its whole list. Now the identity only changes when
   // the contents do.
   const shared: SharedData = useMemo(
-    () => ({ monthDays, todayPunches, advances, advancePaid, lateSyncDates, pending, reload }),
-    [monthDays, todayPunches, advances, advancePaid, lateSyncDates, pending, reload],
+    () => ({ monthDays, todayPunches, advances, advancePaid, lateSyncDates, pending, stuck, reload }),
+    [monthDays, todayPunches, advances, advancePaid, lateSyncDates, pending, stuck, reload],
   );
 
   const visibleTabs = TABS.filter((t) => t.key !== "credit" || profile.can_bill);
@@ -232,7 +239,6 @@ export default function MainScreen({
         {tab === "home" && <HomeTab profile={profile} branch={branch} data={shared} />}
         {tab === "attendance" && <AttendanceTab data={shared} />}
         {tab === "money" && <MoneyTab profile={profile} data={shared} />}
-        {tab === "sales" && <SalesTab profile={profile} branch={branch} />}
         {tab === "credit" && <CreditTab profile={profile} branch={branch} />}
       </View>
 
@@ -251,13 +257,7 @@ export default function MainScreen({
                 size={22}
                 color={active ? colors.accent : colors.ink3}
               />
-              {/* five tabs leave "Attendance" about 70px; shrink rather
-                  than wrap, so the bar stays one line high */}
-              <Text
-                numberOfLines={1}
-                adjustsFontSizeToFit
-                style={[styles.tabLabel, active && styles.tabLabelActive]}
-              >
+              <Text numberOfLines={1} style={[styles.tabLabel, active && styles.tabLabelActive]}>
                 {t.label}
               </Text>
             </TouchableOpacity>

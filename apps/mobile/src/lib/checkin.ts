@@ -14,7 +14,7 @@
 import * as Crypto from "expo-crypto";
 import type { LocationObject } from "expo-location";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { CheckinRow, drain, enqueue } from "./queue";
+import { CheckinRow, drain, enqueue, isPending } from "./queue";
 
 const DEVICE_ID_KEY = "agamani.device_id";
 
@@ -75,7 +75,13 @@ export async function performCheckin(opts: {
     synced_late: false,
   };
 
-  enqueue(row, photo);
-  const synced = await drain();
-  return { queued: synced === 0 };
+  const id = enqueue(row, photo);
+  await drain();
+  // Ask about THIS punch rather than counting how many rows moved. The
+  // old check — "nothing synced, so we must be offline" — was wrong two
+  // ways: a drain skipped because another was already running returned
+  // zero, and a drain held up by an older stuck row returned zero even
+  // though this punch was fine. Both told the worker their check-in had
+  // not gone through, so they pressed again.
+  return { queued: isPending(id) };
 }
