@@ -17,6 +17,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useBranch } from "../lib/branch";
 import { titleCase } from "../lib/text";
+import OrielImport from "./OrielImport";
 
 type StaffRow = {
   profile_id: string;
@@ -24,6 +25,23 @@ type StaffRow = {
   lines: number;
   items: number;
   value: number;
+};
+
+/** how a claim stands against Oriel's own record of the same barcode */
+type VerifyState =
+  | "CONFIRMED" | "NOT_FOUND" | "UNDONE" | "AWAITING_IMPORT" | "VOIDED";
+
+const VERIFY: Record<VerifyState, { label: string; cls: string; why: string }> = {
+  CONFIRMED:       { label: "Confirmed", cls: "full",
+                     why: "Oriel billed this exact garment" },
+  NOT_FOUND:       { label: "No such sale", cls: "miss-all",
+                     why: "that day was imported and this barcode was never billed" },
+  UNDONE:          { label: "Returned", cls: "miss-some",
+                     why: "it was billed, then returned or cancelled" },
+  AWAITING_IMPORT: { label: "Not checked yet", cls: "",
+                     why: "that day's file from Oriel has not been brought in" },
+  VOIDED:          { label: "Removed", cls: "",
+                     why: "this line was withdrawn" },
 };
 
 type Line = {
@@ -37,6 +55,8 @@ type Line = {
   note: string | null;
   created_at: string;
   products: { name: string } | null;
+  state?: VerifyState;
+  bill_no?: string | null;
 };
 
 type Product = {
@@ -62,7 +82,7 @@ const fmtDay = (d: string) =>
 
 export default function Sales() {
   const { branchId, branch } = useBranch();
-  const [view, setView] = useState<"staff" | "products">("staff");
+  const [view, setView] = useState<"staff" | "products" | "oriel">("staff");
 
   const [from, setFrom] = useState(daysAgo(6));
   const [to, setTo] = useState(istToday());
@@ -105,6 +125,25 @@ export default function Sales() {
     }
 
     const all = (ls as unknown as Line[]) ?? [];
+
+    // What Oriel says about each of those claims. A separate read rather
+    // than an embedded join: sale_verification is a view, and asking for
+    // it by the ids we already have keeps this to one extra round trip.
+    const { data: vs } = await supabase
+      .from("sale_verification")
+      .select("id, state, bill_no")
+      .eq("branch_id", branchId)
+      .gte("sold_on", from)
+      .lte("sold_on", to);
+    const verdict = new Map<string, { state: VerifyState; bill_no: string | null }>();
+    for (const v of (vs as { id: string; state: VerifyState; bill_no: string | null }[]) ?? []) {
+      verdict.set(v.id, { state: v.state, bill_no: v.bill_no });
+    }
+    for (const l of all) {
+      const v = verdict.get(l.id);
+      l.state = v?.state;
+      l.bill_no = v?.bill_no ?? null;
+    }
     setLines(all);
 
     const by = new Map<string, StaffRow>();
@@ -238,9 +277,17 @@ export default function Sales() {
         >
           Products
         </button>
+        <button
+          className={`khata-tab${view === "oriel" ? " on" : ""}`}
+          onClick={() => setView("oriel")}
+        >
+          Oriel sales
+        </button>
       </div>
 
-      {view === "staff" ? (
+      {view === "oriel" ? (
+        <OrielImport onDone={loadSales} />
+      ) : view === "staff" ? (
         <>
           <div className="card toolbar">
             <label className="toolbar-field">
@@ -335,7 +382,16 @@ export default function Sales() {
                                 <span className="dt-amt">
                                   <span className="led-out">{rupees(Number(l.amount))}</span>
                                 </span>
-                                <span className="dt-staff muted" />
+                                <span className="dt-staff">
+                                  {l.state && (
+                                    <span
+                                      className={`tag ${VERIFY[l.state].cls}`}
+                                      title={VERIFY[l.state].why}
+                                    >
+                                      {VERIFY[l.state].label}
+                                    </span>
+                                  )}
+                                </span>
                               </div>
                             ))}
                           </div>

@@ -17,6 +17,7 @@ import HomeTab from "./tabs/HomeTab";
 import AttendanceTab from "./tabs/AttendanceTab";
 import MoneyTab from "./tabs/MoneyTab";
 import CreditTab from "./tabs/CreditTab";
+import SalesTab from "./tabs/SalesTab";
 
 export type DayRecord = { work_date: string; status: string; late_minutes: number };
 export type PunchKind = "ARRIVAL" | "LUNCH_OUT" | "LUNCH_IN" | "DEPARTURE";
@@ -56,11 +57,10 @@ const TABS = [
   // permanent locked door for the 34 people who cannot use it.
   { key: "credit", label: "Credit", icon: "receipt-outline", iconOn: "receipt" },
 
-  // Sales sat here and is parked until the Oriel link exists. The screen
-  // itself is kept, in tabs/SalesTab.tsx — nothing imports it, so Metro
-  // leaves it out of the bundle entirely and it costs nothing to keep.
-  // Putting it back is this entry, its import, and one render line below:
-  //   { key: "sales", label: "Sales", icon: "barcode-outline", iconOn: "barcode" },
+  // Off for everyone until the owner switches it on, the same way the
+  // credit book is. The feature has never carried a real row, so it goes
+  // to two or three phones first rather than to ninety-four.
+  { key: "sales", label: "Sales", icon: "barcode-outline", iconOn: "barcode" },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -224,14 +224,17 @@ export default function MainScreen({
     [monthDays, todayPunches, advances, advancePaid, lateSyncDates, pending, stuck, reload],
   );
 
-  const visibleTabs = TABS.filter((t) => t.key !== "credit" || profile.can_bill);
+  const visibleTabs = TABS.filter((t) =>
+    (t.key !== "credit" || profile.can_bill) &&
+    (t.key !== "sales" || profile.can_log_sales));
 
   // If the owner withdraws billing access while the app is open, the tab
   // vanishes from under whatever is on screen — send them somewhere real
   // rather than leaving an empty body behind.
   useEffect(() => {
     if (tab === "credit" && !profile.can_bill) setTab("home");
-  }, [tab, profile.can_bill]);
+    if (tab === "sales" && !profile.can_log_sales) setTab("home");
+  }, [tab, profile.can_bill, profile.can_log_sales]);
 
   return (
     <View style={styles.root}>
@@ -239,6 +242,7 @@ export default function MainScreen({
         {tab === "home" && <HomeTab profile={profile} branch={branch} data={shared} />}
         {tab === "attendance" && <AttendanceTab data={shared} />}
         {tab === "money" && <MoneyTab profile={profile} data={shared} />}
+        {tab === "sales" && <SalesTab profile={profile} branch={branch} />}
         {tab === "credit" && <CreditTab profile={profile} branch={branch} />}
       </View>
 

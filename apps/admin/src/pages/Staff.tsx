@@ -31,6 +31,7 @@ type StaffRow = {
   salary_conveyance: number;
   salary_washing: number;
   can_bill: boolean;
+  can_log_sales: boolean;
 };
 
 const EMPLOYMENT_LABEL: Record<string, string> = {
@@ -336,6 +337,23 @@ export default function Staff() {
   // function: profiles is already owner-only for UPDATE in the database,
   // so the rule is enforced where it matters and a second copy of it in
   // a function would only be another place to get it wrong.
+  // Same shape as the billing toggle, and same reasoning: profiles is
+  // already owner-only for UPDATE in the database, so the rule lives
+  // where it matters rather than in two places.
+  const toggleSales = async (row: StaffRow) => {
+    setError(null);
+    const next = !row.can_log_sales;
+    const { error: err } = await supabase
+      .from("profiles").update({ can_log_sales: next }).eq("id", row.id);
+    if (err) { setError(err.message); return; }
+    setNotice(
+      next
+        ? `${titleCase(row.full_name)} can now record what they sell. They may need to reopen the app.`
+        : `${titleCase(row.full_name)} can no longer record sales.`,
+    );
+    await load();
+  };
+
   const toggleBilling = async (row: StaffRow) => {
     setError(null);
     const next = !row.can_bill;
@@ -810,6 +828,7 @@ export default function Staff() {
                 {/* who is on the counter is worth seeing without opening
                     a menu — it is a permission over money, not a setting */}
                 {row.can_bill && <span className="tag-bill">Billing counter</span>}
+                {row.can_log_sales && <span className="tag-bill">Sales</span>}
                 {(row.phone || row.shift_start) && (
                   <div className="note muted">
                     {row.phone}
@@ -870,6 +889,11 @@ export default function Staff() {
                                 {row.can_bill
                                   ? "Remove billing counter access"
                                   : "Allow billing counter"}
+                              </button>
+                              <button onClick={() => { setOpenMenu(null); toggleSales(row); }}>
+                                {row.can_log_sales
+                                  ? "Stop recording sales"
+                                  : "Let them record sales"}
                               </button>
                               <button onClick={() => { setOpenMenu(null); setPendingAction({ id: row.id, kind: "toggle_active" }); }}>
                                 {row.active ? "Deactivate" : "Activate"}

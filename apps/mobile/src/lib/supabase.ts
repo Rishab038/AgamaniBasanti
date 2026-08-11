@@ -38,6 +38,8 @@ export type Profile = {
   lunch_minutes: number;
   /** owner-granted: may record credit sales at the billing counter */
   can_bill: boolean;
+  /** may record what they sold — off until the owner switches it on */
+  can_log_sales: boolean;
 };
 
 /** a customer's page in the shop's credit book */

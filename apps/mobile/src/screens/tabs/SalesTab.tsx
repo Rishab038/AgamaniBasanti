@@ -1,20 +1,26 @@
 // What I sold today.
 //
-// Oriel already prints a barcode onto every product and already knows
-// what each one costs. The only thing it does not record is who made
-// the sale, so that is the only thing this asks for: point the camera at
-// the label, and the item joins your day.
+// A scan is a claim on a barcode and nothing else. No name to type, no
+// price to enter, no product list to have been loaded first — Oriel
+// already knows what every code is worth, and the barcode is the only
+// thing this shop has that Oriel cannot supply for itself: who was
+// holding it.
 //
-// The camera fires onBarcodeScanned many times a second while a code is
-// in frame. Left alone that turns one shirt into thirty sales, so a scan
-// is followed by a short confirmation during which nothing is read. The
-// pause doubles as the feedback — you see what you just added — and it
-// still lets you scan a second identical item straight after, which is
-// how quantity is counted here.
+// So the whole screen is: point, scan, done. Everything a staff member
+// sees afterwards — the item's name, what it came to, whether it counted
+// — comes back from the matched bill line once the day's sales arrive
+// from Oriel. Nobody here states what their own sale was worth, which is
+// exactly why the figure can be trusted.
 //
-// A code nobody has named yet stops the camera and asks for a name and
-// a price, once. Every later scan of that code anywhere in either shop
-// is instant.
+// Two details that are load-bearing:
+//
+//  * The camera fires onBarcodeScanned many times a second while a code
+//    is in frame. Left alone that turns one garment into thirty sales,
+//    so a scan is followed by a short deaf period. The pause doubles as
+//    the confirmation.
+//  * Every code is one physical garment, so scanning the same label
+//    twice is a mistake rather than a second sale. The database refuses
+//    it and this screen says so plainly.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -23,22 +29,22 @@ import {
 } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Haptics from "expo-haptics";
-// Deep import, not the barrel: `from "@expo/vector-icons"` makes
-// Metro bundle the font file of EVERY icon family — thirteen of
-// them, ~4.4 MB — when this app draws Ionicons and nothing else.
+// Deep import, not the barrel: `from "@expo/vector-icons"` makes Metro
+// bundle the font of EVERY icon family when this app draws Ionicons.
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { Branch, Profile, supabase } from "../../lib/supabase";
-import { colors, fonts, radius, shadow } from "../../lib/theme";
+import { colors, fonts, radius, rowEdge, shadow } from "../../lib/theme";
 import { fmtClock as fmtTime, groupInr, istToday } from "../../lib/fmt";
 
-type Line = {
+type State = "CONFIRMED" | "NOT_FOUND" | "UNDONE" | "AWAITING_IMPORT" | "VOIDED";
+
+type Scan = {
   id: string;
   barcode: string;
-  qty: number;
-  unit_price: number;
-  amount: number;
   created_at: string;
-  products: { name: string } | null;
+  item_desc: string | null;
+  oriel_amount: number | null;
+  state: State;
 };
 
 /** the label formats a garment shop actually meets */
@@ -46,11 +52,18 @@ const BARCODE_TYPES = [
   "ean13", "ean8", "upc_a", "upc_e", "code128", "code39", "code93", "itf14", "codabar",
 ] as const;
 
-// this tab shows exact amounts, so no rounding and no abs
-const rupees = (n: number) => `₹${groupInr(Number(n))}`;
+// Worded for the person who did the scanning, not for the owner. "Not on
+// any bill" is a fact they can act on; anything sharper would be an
+// accusation made by a spreadsheet.
+const SAY: Record<State, { label: string; tone: "good" | "wait" | "warn" | "bad" }> = {
+  CONFIRMED:       { label: "Counted",        tone: "good" },
+  AWAITING_IMPORT: { label: "Checking tonight", tone: "wait" },
+  UNDONE:          { label: "Returned",       tone: "warn" },
+  NOT_FOUND:       { label: "Not on any bill", tone: "bad" },
+  VOIDED:          { label: "Removed",        tone: "wait" },
+};
 
-/** a price as typed: digits only, no leading zeros */
-const money = (s: string) => s.replace(/[^0-9]/g, "").replace(/^0+(?=\d)/, "");
+const rupees = (n: number) => `₹${groupInr(Number(n))}`;
 
 export default function SalesTab({
   profile,
@@ -59,7 +72,7 @@ export default function SalesTab({
   profile: Profile;
   branch: Branch;
 }) {
-  const [lines, setLines] = useState<Line[]>([]);
+  const [scans, setScans] = useState<Scan[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,160 +82,84 @@ export default function SalesTab({
   /** what was just added, held on screen while the camera stays deaf */
   const [flash, setFlash] = useState<string | null>(null);
   const cooling = useRef(false);
-
-  /** a code with no name yet, or one typed by hand */
-  const [naming, setNaming] = useState<
-    { barcode: string; name: string; price: string; qty: string; known: boolean } | null
-  >(null);
   const [typing, setTyping] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const { data, error: err } = await supabase
-      .from("sale_lines")
-      .select("id, barcode, qty, unit_price, amount, created_at, products(name)")
+      .from("sale_verification")
+      .select("id, barcode, created_at, item_desc, oriel_amount, state")
       .eq("profile_id", profile.id)
       .eq("sold_on", istToday())
       .order("created_at", { ascending: false });
     if (err) setError(err.message);
-    setLines((data as unknown as Line[]) ?? []);
+    setScans((data as unknown as Scan[]) ?? []);
     setLoading(false);
   }, [profile.id]);
 
   useEffect(() => { load(); }, [load]);
 
-  const items = lines.reduce((t, l) => t + l.qty, 0);
-  const value = lines.reduce((t, l) => t + Number(l.amount), 0);
+  const counted = scans.filter((s) => s.state === "CONFIRMED");
+  const value = counted.reduce((t, s) => t + Number(s.oriel_amount ?? 0), 0);
 
-  /** put one line in the book; the caller has already resolved the price */
-  const addLine = async (
-    barcode: string, productId: string | null, unitPrice: number, qty: number, name: string,
-  ) => {
+  /** the whole write: a barcode, and who was holding it */
+  const claim = async (raw: string) => {
+    const barcode = raw.trim();
+    if (!barcode) return;
+
     const { data, error: err } = await supabase
       .from("sale_lines")
       .insert({
         branch_id: branch.id,
         profile_id: profile.id,
-        product_id: productId,
         barcode,
-        qty,
-        unit_price: unitPrice,
+        qty: 1,
         recorded_by: profile.id,
       })
       .select("id");
 
-    // an insert refused by RLS comes back as success with no rows, so
-    // the row coming back is the only proof it landed
-    if (err || !data || data.length === 0) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      setError(err?.message ?? "That sale was not saved. Pull down to refresh and try again.");
-      return false;
-    }
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setFlash(`${name} · ${rupees(unitPrice * qty)}`);
-    await load();
-    return true;
-  };
-
-  /** a barcode has arrived, from the camera or from the keyboard */
-  const resolve = async (raw: string) => {
-    const barcode = raw.trim();
-    if (!barcode) return;
-
-    const { data: p, error: err } = await supabase
-      .from("products")
-      .select("id, name, price")
-      .eq("barcode", barcode)
-      .maybeSingle();
-
-    if (err) { setError(err.message); return; }
-
-    // known, and priced: straight into the book without a keystroke
-    if (p && p.price != null) {
-      await addLine(barcode, p.id, Number(p.price), 1, p.name);
+    // One code is one garment, so a clash means this exact piece is
+    // already claimed — by this person a moment ago, or by a colleague.
+    if (err && (err.code === "23505" || /duplicate key/i.test(err.message ?? ""))) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      setFlash("Already counted");
       return;
     }
-
-    // known but never priced, or not known at all — ask, once
-    setScanning(false);
-    setNaming({
-      barcode,
-      name: p?.name ?? "",
-      price: "",
-      qty: "1",
-      known: !!p,
-    });
+    // an insert refused by RLS returns success with no rows, so the row
+    // coming back is the only proof it landed
+    if (err || !data || data.length === 0) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      setError(err?.message ?? "That did not save. Pull down to refresh and try again.");
+      return;
+    }
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setFlash(barcode);
+    await load();
   };
 
   const onScanned = ({ data }: { data: string }) => {
     if (cooling.current || busy) return;
     cooling.current = true;
     setBusy(true);
-    resolve(data).finally(() => {
+    claim(data).finally(() => {
       setBusy(false);
       // long enough that one label cannot fire twice, short enough that
-      // a second identical garment is only a moment behind
-      setTimeout(() => { cooling.current = false; setFlash(null); }, 1400);
+      // the next garment is only a moment behind
+      setTimeout(() => { cooling.current = false; setFlash(null); }, 1200);
     });
   };
 
-  /** finish naming a code, then log the sale against it */
-  const saveNaming = async () => {
-    if (!naming || busy) return;
-    const name = naming.name.trim();
-    const price = Number(naming.price || 0);
-    const qty = Math.max(1, Number(naming.qty || 1));
-    if (!name) { setError("Give the item a name so it is recognised next time."); return; }
-    setBusy(true);
-    setError(null);
-    try {
-      let productId: string | null = null;
-
-      if (naming.known) {
-        // it already exists but carries no price; only the owner may set
-        // one, so the price rides on this sale alone
-        const { data } = await supabase
-          .from("products").select("id").eq("barcode", naming.barcode).maybeSingle();
-        productId = data?.id ?? null;
-      } else {
-        const { data, error: cErr } = await supabase
-          .from("products")
-          .insert({
-            barcode: naming.barcode,
-            name,
-            price,
-            created_by: profile.id,
-          })
-          .select("id")
-          .single();
-        // somebody else may have named the same code a second earlier
-        if (cErr) {
-          const { data: again } = await supabase
-            .from("products").select("id").eq("barcode", naming.barcode).maybeSingle();
-          if (!again) { setError(cErr.message); return; }
-          productId = again.id;
-        } else {
-          productId = data.id;
-        }
-      }
-
-      if (await addLine(naming.barcode, productId, price, qty, name)) setNaming(null);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const removeLine = async (l: Line) => {
+  const remove = async (s: Scan) => {
     const { data, error: err } = await supabase
-      .from("sale_lines").delete().eq("id", l.id).select("id");
+      .from("sale_lines").delete().eq("id", s.id).select("id");
     if (err || !data || data.length === 0) {
-      setError(err?.message ?? "That line could not be removed.");
+      setError(err?.message ?? "That could not be removed.");
       return;
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     await load();
   };
 
-  // ---------- the scanner ----------
+  // ---------- the camera ----------
   if (scanning) {
     if (!permission?.granted) {
       return (
@@ -230,8 +167,8 @@ export default function SalesTab({
           <Ionicons name="barcode-outline" size={44} color={colors.accent} />
           <Text style={styles.askTitle}>Camera needed to read barcodes</Text>
           <Text style={styles.askBody}>
-            The camera only reads the code on the label. Nothing is photographed
-            and nothing is stored.
+            It only reads the number on the label. Nothing is photographed and
+            nothing is stored.
           </Text>
           <TouchableOpacity
             style={styles.primaryBtn}
@@ -243,7 +180,7 @@ export default function SalesTab({
             <Text style={styles.primaryText}>Allow camera</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={() => setScanning(false)}>
-            <Text style={styles.linkText}>Type the code instead</Text>
+            <Text style={styles.linkText}>Go back</Text>
           </TouchableOpacity>
         </View>
       );
@@ -258,17 +195,21 @@ export default function SalesTab({
           onBarcodeScanned={onScanned}
         />
         <View style={styles.camTop}>
-          <Text style={styles.camHint}>Point at the barcode on the label</Text>
+          <Text style={styles.camHint}>Point at the barcode on the tag</Text>
           <Text style={styles.camCount}>
-            {items} item{items === 1 ? "" : "s"} · {rupees(value)} today
+            {scans.length} scanned today
           </Text>
         </View>
 
         <View style={styles.reticle} />
 
         {flash && (
-          <View style={styles.flash}>
-            <Ionicons name="checkmark-circle" size={20} color="#fff" />
+          <View style={[styles.flash, flash === "Already counted" && styles.flashWarn]}>
+            <Ionicons
+              name={flash === "Already counted" ? "alert-circle" : "checkmark-circle"}
+              size={20}
+              color="#fff"
+            />
             <Text style={styles.flashText}>{flash}</Text>
           </View>
         )}
@@ -291,7 +232,7 @@ export default function SalesTab({
             value={typing}
             onChange={setTyping}
             onCancel={() => setTyping(null)}
-            onSubmit={async () => { const c = typing; setTyping(null); await resolve(c); }}
+            onSubmit={async () => { const c = typing; setTyping(null); await claim(c); }}
           />
         )}
       </View>
@@ -309,13 +250,17 @@ export default function SalesTab({
 
         <View style={[styles.totals, shadow.card]}>
           <View style={styles.totalHalf}>
-            <Text style={styles.totalValue}>{items}</Text>
-            <Text style={styles.totalLabel}>item{items === 1 ? "" : "s"}</Text>
+            <Text style={styles.totalValue}>{scans.length}</Text>
+            <Text style={styles.totalLabel}>scanned</Text>
           </View>
           <View style={styles.totalDivider} />
           <View style={styles.totalHalf}>
-            <Text style={styles.totalValue}>{rupees(value)}</Text>
-            <Text style={styles.totalLabel}>sold</Text>
+            <Text style={styles.totalValue}>
+              {counted.length > 0 ? rupees(value) : "—"}
+            </Text>
+            <Text style={styles.totalLabel}>
+              {counted.length} counted
+            </Text>
           </View>
         </View>
 
@@ -331,40 +276,55 @@ export default function SalesTab({
           activeOpacity={0.85}
         >
           <Ionicons name="barcode-outline" size={26} color="#fff" />
-          <Text style={styles.scanText}>Scan a barcode</Text>
+          <Text style={styles.scanText}>Scan a tag</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.typeLink} onPress={() => setTyping("")}>
-          <Text style={styles.linkText}>Label torn? Type the code</Text>
+          <Text style={styles.linkText}>Tag torn? Type the code</Text>
         </TouchableOpacity>
 
-        {lines.length === 0 && !loading && (
+        {scans.length === 0 && !loading && (
           <Text style={styles.empty}>
-            Nothing logged yet today. Scan each item as it goes out and it lands here.
+            Nothing scanned yet today. Scan each tag as the garment goes out and
+            it lands here.
           </Text>
         )}
 
-        {lines.map((l) => (
-          <View key={l.id} style={styles.line}>
-            <View style={styles.lineWho}>
-              <Text style={styles.lineName} numberOfLines={1}>
-                {l.products?.name ?? l.barcode}
-              </Text>
-              <Text style={styles.lineSub}>
-                {fmtTime(l.created_at)}
-                {l.qty > 1 ? ` · ${l.qty} × ${rupees(l.unit_price)}` : ""}
-              </Text>
+        {scans.map((s) => {
+          const say = SAY[s.state];
+          return (
+            <View key={s.id} style={[styles.line, rowEdge]}>
+              <View style={styles.lineWho}>
+                <Text style={styles.lineName} numberOfLines={1}>
+                  {s.item_desc ?? s.barcode}
+                </Text>
+                <Text style={styles.lineSub}>
+                  {fmtTime(s.created_at)}
+                  {s.item_desc ? ` · ${s.barcode}` : ""}
+                </Text>
+              </View>
+              <View style={styles.lineRight}>
+                {s.oriel_amount != null && (
+                  <Text style={styles.lineAmt}>{rupees(s.oriel_amount)}</Text>
+                )}
+                <Text style={[styles.chip, styles[`chip_${say.tone}`]]}>
+                  {say.label}
+                </Text>
+              </View>
+              {s.state === "AWAITING_IMPORT" && (
+                <TouchableOpacity style={styles.lineDel} onPress={() => remove(s)}>
+                  <Ionicons name="close" size={17} color={colors.ink3} />
+                </TouchableOpacity>
+              )}
             </View>
-            <Text style={styles.lineAmt}>{rupees(Number(l.amount))}</Text>
-            <TouchableOpacity style={styles.lineDel} onPress={() => removeLine(l)}>
-              <Ionicons name="close" size={17} color={colors.ink3} />
-            </TouchableOpacity>
-          </View>
-        ))}
+          );
+        })}
 
-        {lines.length > 0 && (
+        {scans.length > 0 && (
           <Text style={styles.foot}>
-            A mistake can be removed today. After tonight it is the owner's to correct.
+            Tonight the shop's own bills are checked against what you scanned.
+            Anything that does not match will say so — tell the owner if it
+            looks wrong.
           </Text>
         )}
       </ScrollView>
@@ -374,76 +334,14 @@ export default function SalesTab({
           value={typing}
           onChange={setTyping}
           onCancel={() => setTyping(null)}
-          onSubmit={async () => { const c = typing; setTyping(null); await resolve(c); }}
+          onSubmit={async () => { const c = typing; setTyping(null); await claim(c); }}
         />
-      )}
-
-      {naming && (
-        <Modal visible transparent animationType="fade" onRequestClose={() => setNaming(null)}>
-          <KeyboardAvoidingView
-            style={styles.backdrop}
-            behavior={Platform.OS === "ios" ? "padding" : undefined}
-          >
-            <View style={styles.sheet}>
-              <Text style={styles.sheetTitle}>
-                {naming.known ? "What does this cost?" : "New item"}
-              </Text>
-              <Text style={styles.sheetCode}>{naming.barcode}</Text>
-              <Text style={styles.sheetBody}>
-                {naming.known
-                  ? "This code has a name but no price yet. What it sells for today:"
-                  : "Nobody has named this code yet. Name it once and every later scan, in either shop, is instant."}
-              </Text>
-
-              {!naming.known && (
-                <TextInput
-                  style={styles.input}
-                  placeholder="Item name"
-                  placeholderTextColor={colors.ink3}
-                  value={naming.name}
-                  onChangeText={(t) => setNaming({ ...naming, name: t })}
-                  autoFocus
-                />
-              )}
-              <TextInput
-                style={styles.input}
-                placeholder="Price (₹)"
-                placeholderTextColor={colors.ink3}
-                keyboardType="number-pad"
-                value={naming.price}
-                onChangeText={(t) => setNaming({ ...naming, price: money(t) })}
-                autoFocus={naming.known}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="How many"
-                placeholderTextColor={colors.ink3}
-                keyboardType="number-pad"
-                value={naming.qty}
-                onChangeText={(t) => setNaming({ ...naming, qty: t.replace(/[^0-9]/g, "") })}
-              />
-
-              <TouchableOpacity
-                style={[styles.primaryBtn, busy && styles.btnOff]}
-                disabled={busy}
-                onPress={saveNaming}
-              >
-                {busy
-                  ? <ActivityIndicator color="#fff" />
-                  : <Text style={styles.primaryText}>Add to my sales</Text>}
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setNaming(null)} disabled={busy}>
-                <Text style={styles.linkText}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
-          </KeyboardAvoidingView>
-        </Modal>
       )}
     </View>
   );
 }
 
-/** the fallback for a label that will not read */
+/** the fallback for a tag that will not read */
 function TypeCode({
   value, onChange, onCancel, onSubmit,
 }: {
@@ -461,7 +359,7 @@ function TypeCode({
         <View style={styles.sheet}>
           <Text style={styles.sheetTitle}>Type the code</Text>
           <Text style={styles.sheetBody}>
-            The long number printed under the bars on the label.
+            The long number printed under the bars on the tag.
           </Text>
           <TextInput
             style={styles.input}
@@ -477,7 +375,7 @@ function TypeCode({
             disabled={!value.trim()}
             onPress={onSubmit}
           >
-            <Text style={styles.primaryText}>Look it up</Text>
+            <Text style={styles.primaryText}>Add it</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={onCancel}>
             <Text style={styles.linkText}>Cancel</Text>
@@ -531,11 +429,9 @@ const styles = StyleSheet.create({
   line: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: 10,
     backgroundColor: colors.surface,
     borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.line,
     paddingVertical: 12,
     paddingLeft: 14,
     paddingRight: 8,
@@ -543,8 +439,19 @@ const styles = StyleSheet.create({
   lineWho: { flex: 1, gap: 2 },
   lineName: { fontFamily: fonts.bold, fontSize: 14.5, color: colors.ink },
   lineSub: { fontFamily: fonts.regular, fontSize: 12, color: colors.ink3 },
-  lineAmt: { fontFamily: fonts.extra, fontSize: 15, color: colors.accent },
-  lineDel: { padding: 8 },
+  lineRight: { alignItems: "flex-end", gap: 3 },
+  lineAmt: { fontFamily: fonts.extra, fontSize: 15, color: colors.ink },
+  lineDel: { padding: 6 },
+
+  chip: {
+    fontFamily: fonts.bold, fontSize: 11,
+    paddingVertical: 2, paddingHorizontal: 8, borderRadius: radius.pill,
+    overflow: "hidden",
+  },
+  chip_good: { backgroundColor: colors.goodBg, color: colors.good },
+  chip_wait: { backgroundColor: colors.bg, color: colors.ink3 },
+  chip_warn: { backgroundColor: colors.amberBg, color: colors.amber },
+  chip_bad:  { backgroundColor: colors.seriousBg, color: colors.serious },
 
   error: { backgroundColor: colors.seriousBg, borderRadius: radius.sm, padding: 12 },
   errorText: { fontFamily: fonts.bold, fontSize: 13, color: colors.serious, lineHeight: 19 },
@@ -562,8 +469,10 @@ const styles = StyleSheet.create({
   flash: {
     position: "absolute", top: "58%", left: 24, right: 24,
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    backgroundColor: colors.good, borderRadius: radius.pill, paddingVertical: 11, paddingHorizontal: 16,
+    backgroundColor: colors.good, borderRadius: radius.pill,
+    paddingVertical: 11, paddingHorizontal: 16,
   },
+  flashWarn: { backgroundColor: colors.amber },
   flashText: { fontFamily: fonts.bold, fontSize: 14, color: "#fff", flexShrink: 1 },
   camBottom: {
     position: "absolute", bottom: 44, left: 20, right: 20,
@@ -588,18 +497,9 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular, fontSize: 14, color: colors.ink2,
     textAlign: "center", lineHeight: 21, marginBottom: 6,
   },
-  backdrop: {
-    flex: 1, backgroundColor: "#1c1612bb", justifyContent: "center", padding: 22,
-  },
-  sheet: {
-    backgroundColor: colors.surface, borderRadius: radius.lg, padding: 22, gap: 12,
-  },
+  backdrop: { flex: 1, backgroundColor: "#1c1612bb", justifyContent: "center", padding: 22 },
+  sheet: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: 22, gap: 12 },
   sheetTitle: { fontFamily: fonts.extra, fontSize: 19, color: colors.ink },
-  sheetCode: {
-    fontFamily: fonts.bold, fontSize: 13, color: colors.accent,
-    backgroundColor: colors.accentSoft, borderRadius: 6,
-    paddingVertical: 4, paddingHorizontal: 9, alignSelf: "flex-start",
-  },
   sheetBody: { fontFamily: fonts.regular, fontSize: 13.5, color: colors.ink2, lineHeight: 20 },
   input: {
     backgroundColor: colors.bg, borderRadius: radius.sm, borderWidth: 1, borderColor: colors.line2,
