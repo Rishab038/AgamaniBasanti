@@ -191,7 +191,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent, borderRadius: radius.md,
     paddingVertical: 14, alignItems: "center", marginTop: 4,
   },
-  primaryText: { fontFamily: fonts.bold, fontSize: 16, color: "#fff" },
+  primaryText: { fontFamily: fonts.bold, fontSize: 16, color: colors.accentInk },
   skipBtn: { paddingVertical: 10, alignItems: "center" },
   skipText: { fontFamily: fonts.bold, fontSize: 14, color: colors.ink3 },
 });

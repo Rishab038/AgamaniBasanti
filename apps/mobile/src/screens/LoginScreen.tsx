@@ -265,7 +265,7 @@ export default function LoginScreen() {
                 onPress={() => (mode === "login" ? login(pin) : join())}
               >
                 {busy ? (
-                  <ActivityIndicator color="#fff" />
+                  <ActivityIndicator color={colors.accentInk} />
                 ) : (
                   <Text style={styles.loginBtnText}>
                     {mode === "login" ? "Log in" : "Join the shop"}
@@ -306,7 +306,7 @@ const styles = StyleSheet.create({
   },
   tabs: {
     flexDirection: "row",
-    backgroundColor: "#f3ece1",
+    backgroundColor: colors.track,
     borderRadius: radius.pill,
     padding: 4,
     marginBottom: 14,
@@ -363,7 +363,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   loginBtnDisabled: { backgroundColor: colors.line2 },
-  loginBtnText: { fontFamily: fonts.extra, color: "#fff", fontSize: 16 },
+  loginBtnText: { fontFamily: fonts.extra, color: colors.accentInk, fontSize: 16 },
   error: {
     color: colors.serious,
     fontSize: 14,

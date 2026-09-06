@@ -299,7 +299,7 @@ export default function SalesTab({
           onPress={() => { setError(null); setScanning(true); }}
           activeOpacity={0.85}
         >
-          <Ionicons name="barcode-outline" size={26} color="#fff" />
+          <Ionicons name="barcode-outline" size={26} color={colors.accentInk} />
           <Text style={styles.scanText}>Scan a tag</Text>
         </TouchableOpacity>
 
@@ -438,7 +438,7 @@ const styles = StyleSheet.create({
     paddingVertical: 18,
     marginTop: 4,
   },
-  scanText: { fontFamily: fonts.extra, fontSize: 17, color: "#fff" },
+  scanText: { fontFamily: fonts.extra, fontSize: 17, color: colors.accentInk },
   typeLink: { alignItems: "center", paddingVertical: 4 },
 
   empty: {
@@ -521,7 +521,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular, fontSize: 14, color: colors.ink2,
     textAlign: "center", lineHeight: 21, marginBottom: 6,
   },
-  backdrop: { flex: 1, backgroundColor: "#1c1612bb", justifyContent: "center", padding: 22 },
+  backdrop: { flex: 1, backgroundColor: "rgba(9,10,18,0.72)", justifyContent: "center", padding: 22 },
   sheet: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: 22, gap: 12 },
   sheetTitle: { fontFamily: fonts.extra, fontSize: 19, color: colors.ink },
   sheetBody: { fontFamily: fonts.regular, fontSize: 13.5, color: colors.ink2, lineHeight: 20 },
@@ -534,7 +534,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent, borderRadius: radius.sm,
     paddingVertical: 14, alignItems: "center", marginTop: 2,
   },
-  primaryText: { fontFamily: fonts.extra, fontSize: 15, color: "#fff" },
+  primaryText: { fontFamily: fonts.extra, fontSize: 15, color: colors.accentInk },
   btnOff: { opacity: 0.5 },
   linkText: {
     fontFamily: fonts.bold, fontSize: 13.5, color: colors.ink2,

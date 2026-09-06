@@ -701,7 +701,7 @@ export default function CreditTab({
                 onPress={saveAdvance}
                 disabled={!advReady || busy}
               >
-                {busy ? <ActivityIndicator color="#fff" />
+                {busy ? <ActivityIndicator color={colors.accentInk} />
                   : <Text style={styles.submitText}>Send to owner for approval</Text>}
               </TouchableOpacity>
               {!advReady && !busy && (
@@ -850,7 +850,7 @@ export default function CreditTab({
               onPress={saveBill}
               disabled={!billReady || busy}
             >
-              {busy ? <ActivityIndicator color="#fff" />
+              {busy ? <ActivityIndicator color={colors.accentInk} />
                 : <Text style={styles.submitText}>Add to khata</Text>}
             </TouchableOpacity>
             {!billReady && !busy && (
@@ -1040,7 +1040,7 @@ export default function CreditTab({
               onPress={saveMoney}
               disabled={busy || Number(amount || 0) <= 0}
             >
-              {busy ? <ActivityIndicator color="#fff" />
+              {busy ? <ActivityIndicator color={colors.accentInk} />
                 : <Text style={styles.submitText}>Record</Text>}
             </TouchableOpacity>
             <TouchableOpacity style={styles.sheetCancel} onPress={resetMoney}>
@@ -1145,7 +1145,7 @@ const styles = StyleSheet.create({
   segBtn: { flex: 1, paddingVertical: 10, borderRadius: radius.sm, alignItems: "center" },
   segOn: { backgroundColor: colors.accent },
   segText: { fontFamily: fonts.bold, fontSize: 14, color: colors.ink2 },
-  segTextOn: { color: "#fff" },
+  segTextOn: { color: colors.accentInk },
 
   search: {
     backgroundColor: colors.surface,
@@ -1274,7 +1274,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16, alignItems: "center", marginTop: 18,
   },
   submitOff: { opacity: 0.45 },
-  submitText: { fontFamily: fonts.extra, fontSize: 17, color: "#fff" },
+  submitText: { fontFamily: fonts.extra, fontSize: 17, color: colors.accentInk },
   needs: {
     fontFamily: fonts.regular, fontSize: 12.5, color: colors.ink3,
     textAlign: "center", marginTop: 8,
@@ -1288,7 +1288,7 @@ const styles = StyleSheet.create({
   },
   chipOn: { backgroundColor: colors.accent, borderColor: colors.accent },
   chipText: { fontFamily: fonts.bold, fontSize: 13.5, color: colors.ink2 },
-  chipTextOn: { color: "#fff" },
+  chipTextOn: { color: colors.accentInk },
 
   proofRow: { flexDirection: "row", gap: 10, marginTop: 16 },
   proofBtn: {

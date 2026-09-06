@@ -114,8 +114,8 @@ export default function App() {
   if (!fontsLoaded || !ready || (session && (!profile || !branch))) {
     return (
       <View style={styles.loading}>
-        <StatusBar style="dark" />
-        <ActivityIndicator size="large" color="#d96f4e" />
+        <StatusBar style="light" />
+        <ActivityIndicator size="large" color="#9184d9" />
         {session && profile && !branch && (
           <Text style={styles.warn}>
             Your profile has no shop assigned yet. Please ask the owner.
@@ -127,7 +127,7 @@ export default function App() {
 
   return (
     <>
-      <StatusBar style="dark" />
+      <StatusBar style="light" />
       {session && profile && !profile.active ? (
         <PendingScreen profile={profile} onApproved={setProfile} />
       ) : session && profile && profile.role === "worker" && !profile.consent_at ? (
@@ -147,7 +147,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     padding: 24,
-    backgroundColor: "#faf6f0",
+    backgroundColor: "#161826",
   },
-  warn: { marginTop: 16, fontSize: 15, color: "#6b5a4c", textAlign: "center" },
+  warn: { marginTop: 16, fontSize: 15, color: "#b2b6ca", textAlign: "center" },
 });

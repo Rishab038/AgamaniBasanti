@@ -12,11 +12,12 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { Branch, Profile, supabase } from "../lib/supabase";
 import { drain, pendingCount, stuckCount } from "../lib/queue";
 import { registerForPush } from "../lib/push";
-import { colors, fonts, radius, shadow } from "../lib/theme";
+import { colors, fonts, radius } from "../lib/theme";
 import HomeTab from "./tabs/HomeTab";
 import AttendanceTab from "./tabs/AttendanceTab";
 import MoneyTab from "./tabs/MoneyTab";
 import CreditTab from "./tabs/CreditTab";
+import ProfileTab from "./tabs/ProfileTab";
 import SalesTab from "./tabs/SalesTab";
 
 export type DayRecord = { work_date: string; status: string; late_minutes: number };
@@ -49,9 +50,9 @@ export type SharedData = {
 const istToday = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 
 const TABS = [
-  { key: "home", label: "Home", icon: "home-outline", iconOn: "home" },
-  { key: "attendance", label: "Attendance", icon: "calendar-outline", iconOn: "calendar" },
-  { key: "money", label: "Money", icon: "wallet-outline", iconOn: "wallet" },
+  { key: "home", label: "Today", icon: "ellipse-outline", iconOn: "ellipse" },
+  { key: "attendance", label: "Month", icon: "grid-outline", iconOn: "grid" },
+  { key: "money", label: "Money", icon: "cash-outline", iconOn: "cash" },
   // Only for whoever the owner has put on the billing counter — see
   // the filter below. A fourth tab on every worker's phone would be a
   // permanent locked door for the 34 people who cannot use it.
@@ -61,6 +62,12 @@ const TABS = [
   // credit book is. The feature has never carried a real row, so it goes
   // to two or three phones first rather than to ninety-four.
   { key: "sales", label: "Sales", icon: "barcode-outline", iconOn: "barcode" },
+
+  // Last, and always present. Everything the worker can look up about
+  // themselves but not change — wage, shop, phone — plus the way out.
+  // Sign-out used to hang off the bottom of Home, under the one control
+  // the screen exists for.
+  { key: "profile", label: "Me", icon: "person-outline", iconOn: "person" },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -291,29 +298,39 @@ export default function MainScreen({
             <CreditTab profile={profile} branch={branch} active={tab === "credit"} />
           </View>
         )}
+        {visited.profile && (
+          <View style={tab === "profile" ? styles.page : styles.pageHidden}>
+            <ProfileTab profile={profile} branch={branch} data={shared} />
+          </View>
+        )}
       </View>
 
-      <View style={[styles.tabBar, shadow.card]}>
-        {visibleTabs.map((t) => {
-          const active = tab === t.key;
-          return (
-            <TouchableOpacity
-              key={t.key}
-              style={styles.tabItem}
-              onPress={() => openTab(t.key)}
-              activeOpacity={0.7}
-            >
-              <Ionicons
-                name={active ? t.iconOn : t.icon}
-                size={22}
-                color={active ? colors.accent : colors.ink3}
-              />
-              <Text numberOfLines={1} style={[styles.tabLabel, active && styles.tabLabelActive]}>
-                {t.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
+      {/* One pill, the active tab filled with the accent. A floating
+          pill rather than a bar because the ground runs behind it — the
+          shell has no edges anywhere else either. */}
+      <View style={styles.navWrap}>
+        <View style={styles.nav}>
+          {visibleTabs.map((t) => {
+            const on = tab === t.key;
+            return (
+              <TouchableOpacity
+                key={t.key}
+                style={[styles.navItem, on && styles.navItemOn]}
+                onPress={() => openTab(t.key)}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name={on ? t.iconOn : t.icon}
+                  size={17}
+                  color={on ? colors.accentInk : colors.ink3}
+                />
+                <Text numberOfLines={1} style={[styles.navLabel, on && styles.navLabelOn]}>
+                  {t.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       </View>
     </View>
   );
@@ -326,17 +343,27 @@ const styles = StyleSheet.create({
   // `display: none` keeps the tree mounted but out of layout, so a
   // hidden tab draws nothing and measures nothing
   pageHidden: { display: "none" },
-  tabBar: {
+  navWrap: { paddingHorizontal: 16, paddingTop: 6, paddingBottom: 20 },
+  nav: {
     flexDirection: "row",
+    gap: 4,
+    padding: 7,
+    borderRadius: radius.pill,
     backgroundColor: colors.surface,
-    borderTopLeftRadius: radius.lg,
-    borderTopRightRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.line,
-    paddingVertical: 10,
-    paddingBottom: 22,
   },
-  tabItem: { flex: 1, alignItems: "center", gap: 4 },
-  tabLabel: { fontFamily: fonts.bold, fontSize: 12, color: colors.ink3 },
-  tabLabelActive: { color: colors.accent },
+  navItem: {
+    flex: 1,
+    minHeight: 52,
+    borderRadius: radius.pill,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    paddingVertical: 9,
+    paddingHorizontal: 2,
+  },
+  navItemOn: { backgroundColor: colors.accent },
+  navLabel: { fontFamily: fonts.semi, fontSize: 10.5, color: colors.ink3 },
+  navLabelOn: { color: colors.accentInk },
 });

@@ -93,7 +93,7 @@ export default function ConsentScreen({
 
         <Pressable style={[styles.button, busy && styles.buttonDisabled]} onPress={accept} disabled={busy}>
           {busy
-            ? <ActivityIndicator color="#fff" />
+            ? <ActivityIndicator color={colors.accentInk} />
             : <Text style={styles.buttonText}>I understand — continue</Text>}
         </Pressable>
 
@@ -141,7 +141,7 @@ const styles = StyleSheet.create({
     marginTop: 22,
   },
   buttonDisabled: { backgroundColor: colors.line2 },
-  buttonText: { fontFamily: fonts.extra, color: "#fff", fontSize: 16 },
+  buttonText: { fontFamily: fonts.extra, color: colors.accentInk, fontSize: 16 },
   logout: {
     fontFamily: fonts.bold,
     textAlign: "center",

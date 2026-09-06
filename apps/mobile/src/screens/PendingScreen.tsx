@@ -44,7 +44,7 @@ export default function PendingScreen({
         </Text>
         <Pressable style={styles.button} onPress={recheck} disabled={checking}>
           {checking
-            ? <ActivityIndicator color="#fff" />
+            ? <ActivityIndicator color={colors.accentInk} />
             : <Text style={styles.buttonText}>Check again</Text>}
         </Pressable>
         {stillWaiting && (
@@ -99,7 +99,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 34,
     marginTop: 20,
   },
-  buttonText: { fontFamily: fonts.extra, color: "#fff", fontSize: 15 },
+  buttonText: { fontFamily: fonts.extra, color: colors.accentInk, fontSize: 15 },
   waiting: { fontFamily: fonts.bold, color: colors.amber, fontSize: 13, marginTop: 12 },
   logout: {
     fontFamily: fonts.bold,
