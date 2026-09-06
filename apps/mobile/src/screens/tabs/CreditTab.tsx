@@ -13,7 +13,7 @@
 // Only staff the owner has switched on (profiles.can_bill) see this,
 // and the database enforces the same rule independently.
 
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator, KeyboardAvoidingView, Platform, RefreshControl,
   ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View,
@@ -150,9 +150,12 @@ const EMPTY_BILL = {
 export default function CreditTab({
   profile,
   branch,
+  active = true,
 }: {
   profile: Profile;
   branch: Branch;
+  /** false while another tab is on screen */
+  active?: boolean;
 }) {
   const [customers, setCustomers] = useState<CustomerBalance[]>([]);
   const [sales, setSales] = useState<CreditSale[]>([]);
@@ -237,11 +240,30 @@ export default function CreditTab({
 
   useEffect(() => { load(); }, [load]);
 
+  // These two tabs now stay mounted when the worker moves away, so
+  // nothing would ever refetch them: money figures would quietly age
+  // behind whatever else was on screen. Reload when the tab comes back
+  // to the front — the same freshness as before, without rebuilding the
+  // screen or losing the scroll position.
+  const wasActive = useRef(active);
+  useEffect(() => {
+    if (active && !wasActive.current) load();
+    wasActive.current = active;
+  }, [active, load]);
+
   const onRefresh = async () => {
     setRefreshing(true);
     await load();
     setRefreshing(false);
   };
+
+  // How many customer rows are built at once. The list sits inside the
+  // page's ScrollView, so every row is mounted the moment the tab opens
+  // — there is no windowing to save us, and `customer_balances` has no
+  // ceiling. Sorted by biggest balance, the first fifty are the ones
+  // anybody is chasing; the rest are reachable by searching, which
+  // filters the whole book before this slice is taken.
+  const PAGE = 50;
 
   const q = search.trim().toLowerCase();
   const shown = useMemo(
@@ -613,9 +635,16 @@ export default function CreditTab({
             )}
 
             {/* Name and amount only — everything else is on their page */}
-            {shown.map((c) => (
+            {shown.slice(0, PAGE).map((c) => (
               <CustomerRow key={c.id} c={c} onOpen={openCustomerPage} />
             ))}
+
+            {shown.length > PAGE && (
+              <Text style={styles.moreHint}>
+                Showing the {PAGE} largest balances of {shown.length}. Search a
+                name or phone number to find anyone else.
+              </Text>
+            )}
           </>
         ) : mode === "advance" ? (
           <>
@@ -1175,6 +1204,15 @@ const styles = StyleSheet.create({
   warn: { fontFamily: fonts.bold, fontSize: 13, color: colors.serious, marginTop: 8 },
   hint: { fontFamily: fonts.regular, fontSize: 13, color: colors.ink2, marginTop: 8 },
   muted: { fontFamily: fonts.regular, fontSize: 13.5, color: colors.ink3, marginTop: 4 },
+  moreHint: {
+    fontFamily: fonts.regular,
+    fontSize: 12.5,
+    lineHeight: 18,
+    color: colors.ink3,
+    textAlign: "center",
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+  },
   emptyText: {
     fontFamily: fonts.regular, fontSize: 15, color: colors.ink2,
     textAlign: "center", paddingVertical: 10,

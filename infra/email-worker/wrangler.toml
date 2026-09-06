@@ -1,0 +1,10 @@
+name = "agamani-oriel-email"
+main = "worker.js"
+compatibility_date = "2026-07-01"
+
+[vars]
+# The edge function that does the actual importing.
+ORIEL_FUNCTION_URL = "https://zhekzbooxkuosolubdjd.supabase.co/functions/v1/oriel-inbound"
+
+# ORIEL_INBOUND_SECRET is a secret, not a var:
+#   npx wrangler secret put ORIEL_INBOUND_SECRET

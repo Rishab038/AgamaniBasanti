@@ -2,7 +2,7 @@
 // shared data every tab needs — this month's attendance, today's
 // punches, and advances.
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppState, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import * as Updates from "expo-updates";
 // Deep import, not the barrel: `from "@expo/vector-icons"` makes
@@ -73,6 +73,12 @@ export default function MainScreen({
   branch: Branch;
 }) {
   const [tab, setTab] = useState<TabKey>("home");
+  // which tabs have ever been opened — see the render, below
+  const [visited, setVisited] = useState<Partial<Record<TabKey, true>>>({ home: true });
+  const openTab = useCallback((k: TabKey) => {
+    setVisited((v) => (v[k] ? v : { ...v, [k]: true }));
+    setTab(k);
+  }, []);
   const [monthDays, setMonthDays] = useState<DayRecord[]>([]);
   const [todayPunches, setTodayPunches] = useState<PunchRecord[]>([]);
   const [advances, setAdvances] = useState<AdvanceRecord[]>([]);
@@ -80,6 +86,21 @@ export default function MainScreen({
   const [lateSyncDates, setLateSyncDates] = useState<Set<string>>(new Set());
   const [pending, setPending] = useState(0);
   const [stuck, setStuck] = useState(0);
+
+  // Every tab reads `shared`, so a reload that fetched identical rows used
+  // to re-render all of them anyway: `setMonthDays(days.data)` always
+  // hands React a brand-new array, and a new array is never `===` the old
+  // one. With Realtime watching four tables, a burst of unrelated writes
+  // meant repeated full re-renders that changed not one pixel. Comparing
+  // the serialised rows costs microseconds on lists this size and lets
+  // React bail out of the whole subtree.
+  const lastSeen = useRef<Record<string, string>>({});
+  const setIfChanged = useCallback(<T,>(key: string, value: T, apply: (v: T) => void) => {
+    const json = JSON.stringify(value);
+    if (lastSeen.current[key] === json) return;
+    lastSeen.current[key] = json;
+    apply(value);
+  }, []);
 
   const reload = useCallback(async () => {
     try {
@@ -121,25 +142,22 @@ export default function MainScreen({
           .gte("server_ts", monthStartUtc),
       ]);
 
-      if (days.data) setMonthDays(days.data as DayRecord[]);
-      if (punches.data) setTodayPunches(punches.data as PunchRecord[]);
-      if (adv.data) setAdvances(adv.data as AdvanceRecord[]);
+      if (days.data) setIfChanged("days", days.data as DayRecord[], setMonthDays);
+      if (punches.data) setIfChanged("punches", punches.data as PunchRecord[], setTodayPunches);
+      if (adv.data) setIfChanged("adv", adv.data as AdvanceRecord[], setAdvances);
       if (bal.data) setAdvancePaid(bal.data.reduce((s, r) => s + Number(r.amount), 0));
       if (lateSync.data) {
-        setLateSyncDates(
-          new Set(
-            lateSync.data.map((r) =>
-              new Date(r.server_ts).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
-            ),
-          ),
+        const dates = lateSync.data.map((r) =>
+          new Date(r.server_ts).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" }),
         );
+        setIfChanged("lateSync", dates, (d) => setLateSyncDates(new Set(d)));
       }
     } catch {
       // offline — keep whatever we already have
     }
     setPending(pendingCount());
     setStuck(stuckCount());
-  }, [profile.id]);
+  }, [profile.id, setIfChanged]);
 
   useEffect(() => {
     drain().then(reload);
@@ -232,18 +250,47 @@ export default function MainScreen({
   // vanishes from under whatever is on screen — send them somewhere real
   // rather than leaving an empty body behind.
   useEffect(() => {
-    if (tab === "credit" && !profile.can_bill) setTab("home");
-    if (tab === "sales" && !profile.can_log_sales) setTab("home");
-  }, [tab, profile.can_bill, profile.can_log_sales]);
+    if (tab === "credit" && !profile.can_bill) openTab("home");
+    if (tab === "sales" && !profile.can_log_sales) openTab("home");
+  }, [tab, profile.can_bill, profile.can_log_sales, openTab]);
 
   return (
     <View style={styles.root}>
       <View style={styles.body}>
-        {tab === "home" && <HomeTab profile={profile} branch={branch} data={shared} />}
-        {tab === "attendance" && <AttendanceTab data={shared} />}
-        {tab === "money" && <MoneyTab profile={profile} data={shared} />}
-        {tab === "sales" && <SalesTab profile={profile} branch={branch} />}
-        {tab === "credit" && <CreditTab profile={profile} branch={branch} />}
+        {/* Kept mounted once opened, hidden rather than destroyed.
+            Unmounting looked tidy and was the single worst thing this
+            screen did on a cheap phone: every switch back to Home tore
+            down the geofence and started the location watch again, so
+            the check-in button sat disabled saying "Finding your
+            location…" while the GPS took its first fix — the app looking
+            broken at the exact moment it is needed. Credit re-ran two
+            400-row queries per visit for the same reason. A tab never
+            opened still costs nothing. */}
+        {visited.home && (
+          <View style={tab === "home" ? styles.page : styles.pageHidden}>
+            <HomeTab profile={profile} branch={branch} data={shared} active={tab === "home"} />
+          </View>
+        )}
+        {visited.attendance && (
+          <View style={tab === "attendance" ? styles.page : styles.pageHidden}>
+            <AttendanceTab data={shared} />
+          </View>
+        )}
+        {visited.money && (
+          <View style={tab === "money" ? styles.page : styles.pageHidden}>
+            <MoneyTab profile={profile} data={shared} />
+          </View>
+        )}
+        {visited.sales && (
+          <View style={tab === "sales" ? styles.page : styles.pageHidden}>
+            <SalesTab profile={profile} branch={branch} active={tab === "sales"} />
+          </View>
+        )}
+        {visited.credit && (
+          <View style={tab === "credit" ? styles.page : styles.pageHidden}>
+            <CreditTab profile={profile} branch={branch} active={tab === "credit"} />
+          </View>
+        )}
       </View>
 
       <View style={[styles.tabBar, shadow.card]}>
@@ -253,7 +300,7 @@ export default function MainScreen({
             <TouchableOpacity
               key={t.key}
               style={styles.tabItem}
-              onPress={() => setTab(t.key)}
+              onPress={() => openTab(t.key)}
               activeOpacity={0.7}
             >
               <Ionicons
@@ -275,6 +322,10 @@ export default function MainScreen({
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   body: { flex: 1 },
+  page: { flex: 1 },
+  // `display: none` keeps the tree mounted but out of layout, so a
+  // hidden tab draws nothing and measures nothing
+  pageHidden: { display: "none" },
   tabBar: {
     flexDirection: "row",
     backgroundColor: colors.surface,

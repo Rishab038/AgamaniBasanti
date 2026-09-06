@@ -68,9 +68,12 @@ const rupees = (n: number) => `₹${groupInr(Number(n))}`;
 export default function SalesTab({
   profile,
   branch,
+  active = true,
 }: {
   profile: Profile;
   branch: Branch;
+  /** false while another tab is on screen */
+  active?: boolean;
 }) {
   const [scans, setScans] = useState<Scan[]>([]);
   const [loading, setLoading] = useState(true);
@@ -97,6 +100,27 @@ export default function SalesTab({
   }, [profile.id]);
 
   useEffect(() => { load(); }, [load]);
+
+  // These two tabs now stay mounted when the worker moves away, so
+  // nothing would ever refetch them: money figures would quietly age
+  // behind whatever else was on screen. Reload when the tab comes back
+  // to the front — the same freshness as before, without rebuilding the
+  // screen or losing the scroll position.
+  const wasActive = useRef(active);
+  useEffect(() => {
+    if (active && !wasActive.current) load();
+    // Leaving: put the scanner away. The tab is only hidden now, not
+    // torn down, so a camera left open would go on holding the sensor
+    // behind whatever tab replaced it — and the type-a-code box is a
+    // Modal, which renders outside this tree and would float on top of
+    // it. Both are reachable when the owner withdraws sales access
+    // while someone is mid-scan.
+    if (!active && wasActive.current) {
+      setScanning(false);
+      setTyping(null);
+    }
+    wasActive.current = active;
+  }, [active, load]);
 
   const counted = scans.filter((s) => s.state === "CONFIRMED");
   const value = counted.reduce((t, s) => t + Number(s.oriel_amount ?? 0), 0);

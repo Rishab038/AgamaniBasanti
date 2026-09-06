@@ -106,12 +106,20 @@ export default function HomeTab({
   profile,
   branch,
   data,
+  active = true,
 }: {
   profile: Profile;
   branch: Branch;
   data: SharedData;
+  /** false while another tab is on screen: this one stays mounted but
+   *  must not hold the GPS radio open behind it */
+  active?: boolean;
 }) {
-  const [location, setLocation] = useState<Location.LocationObject | null>(null);
+  // A ref, not state. The fix is only ever read inside punch(), never
+  // drawn, so storing it in state re-rendered this screen every twelve
+  // seconds for the whole time the app was open and changed nothing on
+  // it. The geofence result below is the part the screen actually shows.
+  const location = useRef<Location.LocationObject | null>(null);
   const [fence, setFence] = useState<FenceResult>({ inside: false, distance: null, via: "none" });
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -133,7 +141,12 @@ export default function HomeTab({
   const absent = data.monthDays.filter((d) => d.status === "ABSENT").length;
 
   useEffect(() => {
+    // Paused while the worker is on another tab. The screen keeps its
+    // last known fence, so coming back shows the button live straight
+    // away instead of falling back to "Finding your location…".
+    if (!active) return;
     let sub: Location.LocationSubscription | undefined;
+    let stopped = false;
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
       setLocGranted(status === "granted");
@@ -144,24 +157,36 @@ export default function HomeTab({
       sub = await Location.watchPositionAsync(
         { accuracy: Location.Accuracy.Balanced, timeInterval: 12000, distanceInterval: 15 },
         (loc) => {
-          setLocation(loc);
-          setFence(
-            evaluateFence({
-              lat: loc.coords.latitude,
-              lng: loc.coords.longitude,
-              accuracy: loc.coords.accuracy,
-              branchLat: branch.lat,
-              branchLng: branch.lng,
-              radiusM: branch.radius_m,
-              currentSsid: null,
-              branchSsid: branch.wifi_ssid,
-            }),
+          location.current = loc;
+          const next = evaluateFence({
+            lat: loc.coords.latitude,
+            lng: loc.coords.longitude,
+            accuracy: loc.coords.accuracy,
+            branchLat: branch.lat,
+            branchLng: branch.lng,
+            radiusM: branch.radius_m,
+            currentSsid: null,
+            branchSsid: branch.wifi_ssid,
+          });
+          // Standing still still produces a new fix every twelve seconds,
+          // and evaluateFence returns a fresh object each time — so this
+          // re-rendered on a timer all day. Only three fields are drawn.
+          setFence((prev) =>
+            prev.inside === next.inside &&
+            prev.distance === next.distance &&
+            prev.via === next.via
+              ? prev
+              : next,
           );
         },
       );
+      if (stopped) sub.remove();   // tab switched while the watch was starting
     })();
-    return () => sub?.remove();
-  }, [branch]);
+    return () => {
+      stopped = true;
+      sub?.remove();
+    };
+  }, [branch, active]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -197,8 +222,8 @@ export default function HomeTab({
     setBusy(true);
     setBlocked(null);
     try {
-      const spoof = location
-        ? await runSpoofChecks(location)
+      const spoof = location.current
+        ? await runSpoofChecks(location.current)
         : { hardBlock: false, reasons: ["no_gps_fix"] };
       if (spoof.hardBlock) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -211,7 +236,7 @@ export default function HomeTab({
         branchId: branch.id,
         direction: s.direction,
         punchKind: s.kind,
-        location,
+        location: location.current,
         wifiSsid: null,
         flagReasons: [
           ...spoof.reasons,
