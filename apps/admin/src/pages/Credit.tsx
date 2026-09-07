@@ -370,7 +370,8 @@ export default function Credit() {
     <div>
       <div className="page-head">
         <div>
-          <h1>Credit book · {branch?.name ?? ""}</h1>
+          <div className="kicker">{branch?.name ?? ""}</div>
+          <h1>Credit book</h1>
           <p>One page per customer</p>
         </div>
       </div>

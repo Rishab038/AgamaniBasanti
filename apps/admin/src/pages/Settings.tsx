@@ -37,7 +37,7 @@ export default function Settings() {
   const [newShop, setNewShop] = useState("");
   // which shop an unregistered machine should be assigned to
   const [attemptBranch, setAttemptBranch] = useState<Record<string, string>>({});
-  const { reloadBranches, branchId } = useBranch();
+  const { reloadBranches, branchId, branch } = useBranch();
   const [attempts, setAttempts] = useState<{ serial: string; last_seen: string; hits: number }[]>([]);
 
   const load = async () => {
@@ -102,8 +102,11 @@ export default function Settings() {
   return (
     <div>
       <div className="page-head">
-        <h1>Settings</h1>
-        <p>Where the shop is, when shifts run, and which days are holidays.</p>
+        <div>
+          <div className="kicker">{branch?.name ?? "This shop"}</div>
+          <h1>Settings</h1>
+          <p>Where the shop is, when shifts run, and which days are holidays.</p>
+        </div>
       </div>
       {notice && <div className="banner info" onClick={() => setNotice(null)}>{notice}</div>}
       {error && <div className="banner error" onClick={() => setError(null)}>{error}</div>}

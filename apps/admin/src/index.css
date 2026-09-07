@@ -19,79 +19,97 @@
 
 * { box-sizing: border-box; margin: 0; }
 
-:root {
-  /* Warm ground restored — the cream/terracotta palette was never the
-     problem; heavy rounded type at maximum weight was. Type discipline
-     from the rebuild stays. */
-  --bg: #faf6f0;
-  --surface: #ffffff;
-  --line: #eee2d3;
-  --line-2: #e3d5c3;
+/* ============================================================
+   NOCTURNE — the token layer.
 
-  /* warm greys, still only three steps */
-  --ink: #3a2f28;
-  --ink-2: #6b5a4c;
-  --ink-3: #9a8574;
+   Dark is the design's home. The ground is a deep blue-black, every
+   surface is separated from it by a one-pixel ring rather than a blur,
+   and one violet accent carries every action. Amber means "needs your
+   decision", mint means "settled". Nothing else is coloured.
+
+   Three things the light theme has to do differently, and none of them
+   are an inversion:
+
+   * The accent FILL stays #9184d9 in both themes, and text on it is
+     always the ground colour — the violet is light enough that white
+     fails on it and near-black passes comfortably.
+   * The accent as TEXT cannot be the same value. #9184d9 on white is
+     about 2.6:1. `--accent-text` is a darker step in light and a
+     lighter one in dark, so a link is legible either way.
+   * Mint and amber move the same way for the same reason. The dark
+     theme's #7fc9a6 is a fill colour on near-black, not a text colour
+     on white.
+   ============================================================ */
+
+:root {
+  --bg: #eceef8;
+  --surface: #ffffff;
+  --line: rgba(32, 34, 44, 0.10);
+  --line-2: rgba(32, 34, 44, 0.16);
+
+  --ink: #20222c;
+  --ink-2: #4a4e60;
+  --ink-3: #6f7385;
 
   /* the single accent */
-  --accent: #d96f4e;
-  --accent-deep: #c65f3f;
-  --accent-soft: #fdeee7;
-  --on-accent: #ffffff;
+  --accent: #9184d9;
+  --accent-deep: #796cbf;
+  --accent-soft: #e7e5fe;
+  --accent-text: #5d5294;   /* the accent when it is type, not a fill */
+  /* A deep violet panel that carries light text. Fixed in both themes:
+     it is a surface in its own right, not the accent tinted for a
+     background — and --accent-deep goes LIGHTER in dark, which would
+     have put near-white type on a pale violet. */
+  --accent-panel: #5d5294;
+  --on-accent: #161826;
 
-  --good: #4d8a4f;      --good-bg: #e7f0e3;
-  --good-deep: #43793f;  --on-good: #ffffff;
-  --amber: #a5622d;     --amber-bg: #fdeede;
-  --rose: #8a5560;      --rose-bg: #f0e6e8;
-  --serious: #b3402e;   --serious-bg: #f9e7e2;
+  --good: #16785a;      --good-bg: #dff2e9;
+  --good-deep: #0f6e56;  --on-good: #ffffff;
+  --amber: #8a5a12;     --amber-bg: #fdf1de;
+  --rose: #a33a2b;      --rose-bg: #fbe8e5;
+  --serious: #a33a2b;   --serious-bg: #fbe8e5;
 
-  /* The sidebar is dark in both themes, so it carries its own four
-     steps rather than borrowing the page's. */
-  --sidebar: #3a2f28;
-  --sidebar-ink: #efe6dc;
-  --sidebar-ink-2: #b8a493;
-  --sidebar-ink-hi: #f5ede4;
-  --sidebar-line: #55463a;
-  --sidebar-wash: rgba(255, 255, 255, 0.07);
+  /* The top bar sits on the ground in both themes and is separated by
+     a ring, not a fill — so these are near-transparent rather than a
+     second palette. Kept under the old names so nothing that still
+     references them breaks. */
+  --sidebar: #ffffff;
+  --sidebar-ink: #20222c;
+  --sidebar-ink-2: #6f7385;
+  --sidebar-ink-hi: #20222c;
+  --sidebar-line: rgba(32, 34, 44, 0.10);
+  --sidebar-wash: rgba(32, 34, 44, 0.05);
   --logo-plate: #ffffff;
 
-  /* the three surfaces that are neither page nor card */
-  --hover: #fdfaf5;     /* a row or button under the cursor */
-  --sunken: #f7f1e8;    /* a quiet field, an opened-out row */
-  --code-bg: #f3ece1;   /* monospace runs: codes, references */
-  --stat-calm: #efe7db; /* the one stat card that passes no judgement */
-  --oneway: #e0a48d;    /* a day proved by only one of the two sources */
-  --scrim: rgba(28, 22, 18, 0.72);
+  /* neither page nor card */
+  --track: rgba(32, 34, 44, 0.07);   /* inactive pill, quiet fill */
+  --hover: #f5f6fc;
+  --sunken: #f3f4fb;
+  --code-bg: #eceef8;
+  --stat-calm: #f3f4fb;
+  --oneway: #b08cd9;
+  --scrim: rgba(9, 10, 18, 0.55);
 
-  --r-sm: 6px;
-  --r: 8px;
-  --r-lg: 12px;
+  /* Nocturne's radii. Cards are generous, controls are not. */
+  --r-sm: 8px;
+  --r: 12px;
+  --r-lg: 20px;
+  --r-pill: 999px;
 
-  --shadow-1: 0 1px 2px rgba(58, 47, 40, 0.05);
-  --shadow-2: 0 4px 12px -2px rgba(58, 47, 40, 0.10);
-  --shadow-3: 0 12px 32px -8px rgba(58, 47, 40, 0.18);
+  /* A ring is the system's separator. shadow-2 and -3 stay real
+     shadows because a floating menu genuinely needs to lift off the
+     page; shadow-1 is a ring, which is what most surfaces want. */
+  --shadow-1: 0 0 0 1px rgba(32, 34, 44, 0.06);
+  --shadow-2: 0 1px 3px rgba(32, 34, 44, 0.08), 0 0 0 1px rgba(32, 34, 44, 0.05);
+  --shadow-3: 0 16px 40px -12px rgba(32, 34, 44, 0.24), 0 0 0 1px rgba(32, 34, 44, 0.06);
 
-  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --ease: cubic-bezier(0.2, 0.9, 0.3, 1);
 
   color-scheme: light;
 }
 
 /* ============================================================
-   DARK
-
-   Not the light palette inverted. Cream going to grey would have
-   thrown away the warmth that is the whole identity of the thing, so
-   the ground is a warm near-black and every neutral keeps its brown
-   cast. Two adjustments the inversion would have got wrong:
-
-   * The accent gets LIGHTER, not darker. Terracotta at #d96f4e has
-     enough contrast on cream and nowhere near enough on near-black.
-   * Hover goes lighter than the surface, and sunken goes darker. In
-     light mode both are "less white"; in dark they part company, and
-     using one value for both makes recessed and raised look identical.
-
-   The sidebar stays dark in both themes. Here it sits LIGHTER than the
-   page, which is what makes it read as a panel rather than a hole.
+   DARK — the design's home, not a variant.
    ============================================================ */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) { color-scheme: dark; }
@@ -100,96 +118,92 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #17130f;
-    --surface: #201a15;
-    --line: #302720;
-    --line-2: #40342b;
+    --bg: #161826;
+    --surface: #232532;
+    --line: rgba(233, 233, 237, 0.07);
+    --line-2: rgba(233, 233, 237, 0.16);
 
-    --ink: #f2e9df;
-    --ink-2: #c2b1a0;
-    /* #90806f read fine on the page but fell to 4.05:1 on the tinted
-       surfaces — hover rows, code chips — where most of the muted text
-       actually sits. This clears 4.5:1 on all four. */
-    --ink-3: #a08f7d;
+    --ink: #f3f5fe;
+    --ink-2: #b2b6ca;
+    --ink-3: #9397ab;
 
-    --accent: #e5825f;
-    --accent-deep: #f0977a;
-    --accent-soft: #33221b;
-    /* White on this terracotta is 2.7:1 — unreadable. Dark ink on it is
-       6.1:1, which is why a lit button in a dark room carries dark text. */
-    --on-accent: #2a1a12;
+    --accent: #9184d9;
+    --accent-deep: #a7a1db;
+    --accent-soft: rgba(145, 132, 217, 0.16);
+    --accent-text: #b5abfc;
+    --accent-panel: #5d5294;
+    --on-accent: #161826;
 
-    --good: #7fb782;      --good-bg: #1d2a1d;
-  --good-deep: #93c795;  --on-good: #15220f;
-    --good-deep: #93c795;  --on-good: #15220f;
-    --amber: #d69a5e;     --amber-bg: #2e2317;
-    --rose: #c48d9a;      --rose-bg: #2b1f23;
-    --serious: #e8735c;   --serious-bg: #331c17;
+    --good: #7fc9a6;      --good-bg: rgba(127, 201, 166, 0.16);
+    --good-deep: #9fe1cb;  --on-good: #04342c;
+    --amber: #e5a552;     --amber-bg: rgba(229, 165, 82, 0.13);
+    --rose: #e5776b;      --rose-bg: rgba(229, 119, 107, 0.14);
+    --serious: #e5776b;   --serious-bg: rgba(229, 119, 107, 0.14);
 
-    --sidebar: #241d18;
-    --sidebar-ink: #f2e9df;
-    --sidebar-ink-2: #a2907f;
-    --sidebar-ink-hi: #f7f0e8;
-    --sidebar-line: #3a2f27;
-    --sidebar-wash: rgba(255, 255, 255, 0.06);
-    --logo-plate: #f2eae1;
+    --sidebar: #232532;
+    --sidebar-ink: #f3f5fe;
+    --sidebar-ink-2: #9397ab;
+    --sidebar-ink-hi: #f3f5fe;
+    --sidebar-line: rgba(233, 233, 237, 0.07);
+    --sidebar-wash: rgba(233, 233, 237, 0.09);
+    --logo-plate: #ffffff;
 
-    --hover: #292118;
-    --sunken: #141009;
-    --code-bg: #2b231c;
-    --stat-calm: #282019;
-    --oneway: #b3705a;
-    --scrim: rgba(0, 0, 0, 0.78);
+    --track: rgba(233, 233, 237, 0.09);
+    --hover: #282a38;
+    --sunken: #1c1f2e;
+    --code-bg: #1c1f2e;
+    --stat-calm: #1c1f2e;
+    --oneway: #b5abfc;
+    --scrim: rgba(9, 10, 18, 0.62);
 
-    /* a shadow on near-black shows only if it is nearly opaque */
-    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.40);
-    --shadow-2: 0 4px 12px -2px rgba(0, 0, 0, 0.55);
-    --shadow-3: 0 12px 32px -8px rgba(0, 0, 0, 0.70);
+    --shadow-1: 0 0 0 1px rgba(233, 233, 237, 0.07);
+    --shadow-2: 0 0 0 1px rgba(233, 233, 237, 0.07);
+    --shadow-3: 0 24px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(233, 233, 237, 0.10);
   }
 }
 
-/* The same palette again, this time because the owner asked for it
-   rather than because the machine did. Written out in full instead of
-   sharing a class with the block above, so that choosing light on a
-   machine set to dark actually wins. */
 :root[data-theme="dark"] {
-  --bg: #17130f;
-  --surface: #201a15;
-  --line: #302720;
-  --line-2: #40342b;
+  --bg: #161826;
+  --surface: #232532;
+  --line: rgba(233, 233, 237, 0.07);
+  --line-2: rgba(233, 233, 237, 0.16);
 
-  --ink: #f2e9df;
-  --ink-2: #c2b1a0;
-  --ink-3: #a08f7d;
+  --ink: #f3f5fe;
+  --ink-2: #b2b6ca;
+  --ink-3: #9397ab;
 
-  --accent: #e5825f;
-  --accent-deep: #f0977a;
-  --accent-soft: #33221b;
-  --on-accent: #2a1a12;
+  --accent: #9184d9;
+  --accent-deep: #a7a1db;
+  --accent-soft: rgba(145, 132, 217, 0.16);
+  --accent-text: #b5abfc;
+  --accent-panel: #5d5294;
+  --on-accent: #161826;
 
-  --good: #7fb782;      --good-bg: #1d2a1d;
-  --amber: #d69a5e;     --amber-bg: #2e2317;
-  --rose: #c48d9a;      --rose-bg: #2b1f23;
-  --serious: #e8735c;   --serious-bg: #331c17;
+  --good: #7fc9a6;      --good-bg: rgba(127, 201, 166, 0.16);
+  --good-deep: #9fe1cb;  --on-good: #04342c;
+  --amber: #e5a552;     --amber-bg: rgba(229, 165, 82, 0.13);
+  --rose: #e5776b;      --rose-bg: rgba(229, 119, 107, 0.14);
+  --serious: #e5776b;   --serious-bg: rgba(229, 119, 107, 0.14);
 
-  --sidebar: #241d18;
-  --sidebar-ink: #f2e9df;
-  --sidebar-ink-2: #a2907f;
-  --sidebar-ink-hi: #f7f0e8;
-  --sidebar-line: #3a2f27;
-  --sidebar-wash: rgba(255, 255, 255, 0.06);
-  --logo-plate: #f2eae1;
+  --sidebar: #232532;
+  --sidebar-ink: #f3f5fe;
+  --sidebar-ink-2: #9397ab;
+  --sidebar-ink-hi: #f3f5fe;
+  --sidebar-line: rgba(233, 233, 237, 0.07);
+  --sidebar-wash: rgba(233, 233, 237, 0.09);
+  --logo-plate: #ffffff;
 
-  --hover: #292118;
-  --sunken: #141009;
-  --code-bg: #2b231c;
-  --stat-calm: #282019;
-  --oneway: #b3705a;
-  --scrim: rgba(0, 0, 0, 0.78);
+  --track: rgba(233, 233, 237, 0.09);
+  --hover: #282a38;
+  --sunken: #1c1f2e;
+  --code-bg: #1c1f2e;
+  --stat-calm: #1c1f2e;
+  --oneway: #b5abfc;
+  --scrim: rgba(9, 10, 18, 0.62);
 
-  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.40);
-  --shadow-2: 0 4px 12px -2px rgba(0, 0, 0, 0.55);
-  --shadow-3: 0 12px 32px -8px rgba(0, 0, 0, 0.70);
+  --shadow-1: 0 0 0 1px rgba(233, 233, 237, 0.07);
+  --shadow-2: 0 0 0 1px rgba(233, 233, 237, 0.07);
+  --shadow-3: 0 24px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(233, 233, 237, 0.10);
 }
 
 html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
@@ -330,102 +344,167 @@ input:focus, select:focus {
 .btn.confirm:hover { background: var(--good-deep); border-color: var(--good-deep); }
 
 /* ---------- shell ---------- */
-.shell { display: flex; min-height: 100vh; }
-.sidebar {
-  width: 240px;
-  background: var(--sidebar);
-  color: var(--sidebar-ink);
-  padding: 26px 16px;
+/* ---------- shell ----------
+   A top bar, not a sidebar. The dashboard is read on a wide monitor and
+   the pages are tables; giving 240px of every screen to eight links was
+   spending the one axis the content actually needed. Everything the
+   owner switches between — shop, page, theme — now sits on two rows
+   above the content, and the content gets the full width.
+
+   Row one is identity and context: whose shop, what time it is, how it
+   looks. Row two is where to go. The split matters because the shop
+   switcher changes what every page below means, so it must never read
+   as just another nav item. */
+.shell { min-height: 100vh; display: flex; flex-direction: column; }
+
+.topbar {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  position: sticky;
-  top: 0;
-  height: 100vh;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 30px 12px;
 }
-.brand { display: flex; align-items: center; justify-content: center; padding: 4px 8px 18px; }
-/* the logo sits on white in the artwork, so it gets its own light
-   plate rather than floating on the dark cocoa sidebar */
+.brand { display: flex; align-items: center; padding: 0; }
+/* the logo is drawn on white in the artwork, so it keeps its own plate
+   rather than floating on the near-black ground */
 .brand-logo {
-  width: 100%;
-  max-width: 190px;
+  width: 58px;
+  height: 44px;
+  flex: none;
+  object-fit: contain;
   background: var(--logo-plate);
   border-radius: 10px;
-  padding: 8px 10px;
+  padding: 3px 5px;
   display: block;
 }
 .login-logo { width: 100%; max-width: 260px; margin: 0 auto 4px; display: block; }
-.brand .brand-mark { width: 38px; height: 38px; margin: 0; font-size: 17px; border-radius: 12px; box-shadow: none; }
-.brand .name { font-size: 18px; font-weight: 500; color: #fff; line-height: 1.2; }
-.brand .tag { font-size: 11.5px; color: var(--ink-3); font-weight: 400; }
 
-.sidebar nav { display: flex; flex-direction: column; gap: 5px; flex: 1; }
-.nav {
+/* live clock — the mint dot says the page is connected, not decorative */
+.topclock {
   display: flex;
   align-items: center;
-  gap: 11px;
-  color: var(--sidebar-ink-2);
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.topclock .dot {
+  width: 6px; height: 6px; border-radius: 999px;
+  background: var(--good);
+}
+
+.navbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 30px 16px;
+  flex-wrap: wrap;
+}
+.navbar .divider { width: 1px; height: 24px; background: var(--line-2); flex: none; }
+.nav-group { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--ink-3);
   text-decoration: none;
-  padding: 11px 14px;
-  border-radius: 13px;
-  font-size: 14.5px;
-  font-weight: 500;
-  transition: background 160ms var(--ease), color 160ms var(--ease), transform 100ms var(--ease);
+  padding: 11px 18px;
+  border-radius: var(--r-pill);
+  font-size: 13.5px;
+  font-weight: 600;
+  background: var(--track);
+  border: 0;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  transition: background 200ms var(--ease), color 200ms var(--ease), transform 100ms var(--ease);
 }
-.nav svg { width: 17px; height: 17px; }
-.nav:hover { background: var(--sidebar-wash); color: var(--sidebar-ink-hi); }
-.nav:active { transform: scale(0.98); }
-.nav.active {
-  background: var(--accent);
-  color: var(--on-accent);
-  box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--accent) 65%, transparent);
-}
+/* the secondary group is quieter until chosen — same shape, no fill */
+.nav.ghost { background: transparent; padding: 10px 15px; font-size: 13px; font-weight: 500; }
+.nav svg { width: 16px; height: 16px; }
+.nav:hover { background: var(--sidebar-wash); color: var(--ink-2); }
+.nav:active { transform: scale(0.97); }
+.nav.active,
+.nav.ghost.active { background: var(--accent); color: var(--on-accent); }
 .nav .count {
-  margin-left: auto;
-  background: var(--accent);
-  color: var(--on-accent);
-  font-size: 11px;
-  font-weight: 500;
+  min-width: 18px;
+  height: 18px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 10.5px;
+  font-weight: 600;
   border-radius: 999px;
-  min-width: 20px;
-  height: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0 6px;
+  padding: 0 5px;
+  font-variant-numeric: tabular-nums;
 }
-.nav.active .count { background: rgba(255, 255, 255, 0.25); }
+/* A count that is waiting on a decision is amber, not accent: the
+   accent means "you are here", and the two must not look alike. */
+.nav .count.warn { background: var(--amber); color: var(--on-accent); }
+.nav.active .count { background: rgba(22, 24, 38, 0.18); color: var(--on-accent); }
 
 .logout {
-  display: flex; align-items: center; gap: 10px; justify-content: center;
-  background: none;
-  border: 1px solid var(--sidebar-line);
-  color: var(--sidebar-ink-2);
-  padding: 10px;
-  border-radius: 13px;
+  display: inline-flex; align-items: center; gap: 8px; justify-content: center;
+  background: var(--track);
+  border: 0;
+  color: var(--ink-3);
+  padding: 10px 15px;
+  border-radius: var(--r-pill);
   cursor: pointer;
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 500;
   font-family: inherit;
-  transition: background 160ms var(--ease), color 160ms var(--ease);
+  white-space: nowrap;
+  transition: background 200ms var(--ease), color 200ms var(--ease);
 }
-.logout:hover { background: var(--sidebar-wash); color: var(--sidebar-ink-hi); }
+.logout:hover { background: var(--sidebar-wash); color: var(--ink-2); }
 
 /* Full-bleed: tables and cards use the whole window rather than sitting
-   in a 1180px column with dead space beside them. Padding scales up on
-   large monitors so the content still has margins to breathe. */
+   in a 1180px column with dead space beside them. */
 .content {
   flex: 1;
-  min-width: 0;              /* lets flex children shrink instead of overflowing */
-  padding: 26px 30px 48px;
+  min-width: 0;
+  padding: 0 30px 48px;
 }
 
 @media (min-width: 1600px) {
-  .content { padding: 30px 48px 60px; }
+  .topbar { padding: 20px 48px 14px; }
+  .navbar { padding: 0 48px 18px; }
+  .content { padding: 0 48px 60px; }
 }
-.page { animation: rise-in 280ms var(--ease); }
-.page-head { margin-bottom: 16px; display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-.page-head p { color: var(--ink-3); margin-top: 2px; font-size: 13.5px; font-weight: 500; }
+
+/* Narrow windows: the two rows stack and scroll sideways rather than
+   wrapping into a wall of pills. */
+@media (max-width: 900px) {
+  .topbar, .navbar { padding-left: 16px; padding-right: 16px; }
+  .content { padding: 0 16px 40px; }
+  .nav-group { flex-wrap: nowrap; }
+  .navbar { flex-wrap: nowrap; overflow-x: auto; }
+}
+
+.page { animation: rise-in 300ms var(--ease); }
+.page-head { margin-bottom: 16px; display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+/* Nocturne page titles: a small tracked kicker over a large light
+   heading. The kicker carries the context the heading no longer has to. */
+.page-head h1 {
+  font-size: 34px;
+  font-weight: 500;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+  margin-top: 10px;
+}
+.page-head .kicker {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.page-head p { color: var(--ink-3); margin-top: 6px; font-size: 13.5px; font-weight: 400; }
 .page-head .when { color: var(--ink-3); font-size: 14px; font-weight: 500; white-space: nowrap; }
 
 /* ---------- stat tiles (soft colored, per mockup) ---------- */
@@ -439,8 +518,8 @@ input:focus, select:focus {
    people it is counting. The card look is unchanged; only the browser's
    own button styling has to be undone, and a selected state added. */
 .stat {
-  border-radius: 12px;
-  padding: 15px 18px;
+  border-radius: var(--r);
+  padding: 20px 18px 18px;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -480,12 +559,12 @@ input:focus, select:focus {
 .stat.on { box-shadow: inset 0 0 0 2px var(--stat-tone); }
 .stat.on:hover { box-shadow: inset 0 0 0 2px var(--stat-tone), var(--shadow-2); }
 
-.stat .value { font-size: 34px; font-weight: 500; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.stat .value { font-size: 34px; font-weight: 600; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; line-height: 1; }
 .stat.good .value  { color: var(--good); }
 .stat.amber .value { color: var(--amber); }
 .stat.rose .value  { color: var(--rose); }
 .stat.calm .value  { color: var(--ink); }
-.stat .label { font-size: 14px; font-weight: 500; color: var(--ink-2); }
+.stat .label { font-size: 11.5px; font-weight: 500; line-height: 1.3; color: var(--ink-3); margin-top: 10px; }
 /* says what a click will do, without adding a second line of chrome */
 .stat .label::after {
   content: " ›";
@@ -535,11 +614,21 @@ input:focus, select:focus {
 /* ---------- cards & forms ---------- */
 .card {
   background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 16px 18px;
-  margin: 10px 0;
-  animation: rise-in 280ms var(--ease);
+  border: 0;
+  box-shadow: var(--shadow-1);
+  border-radius: var(--r-lg);
+  padding: 24px 26px;
+  margin: 12px 0;
+  animation: rise-in 300ms var(--ease);
+}
+/* Card headings in Nocturne are 16/600 with the tracking pulled in —
+   distinctly a title, but nowhere near the size of a page heading. */
+.card > h3, .card-title {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  margin: 0 0 16px;
 }
 .form-grid {
   display: grid;
@@ -627,30 +716,35 @@ input:focus, select:focus {
 table {
   width: 100%;
   background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 12px;
+  border: 0;
+  box-shadow: var(--shadow-1);
+  border-radius: var(--r-lg);
   border-collapse: separate;
   border-spacing: 0;
-  margin-top: 10px;
+  margin-top: 12px;
   animation: rise-in 300ms var(--ease);
 }
-thead tr:first-child th:first-child { border-top-left-radius: 12px; }
-thead tr:first-child th:last-child { border-top-right-radius: 12px; }
-tbody tr:last-child td:first-child { border-bottom-left-radius: 12px; }
-tbody tr:last-child td:last-child { border-bottom-right-radius: 12px; }
-th, td { padding: 11px 16px; text-align: left; vertical-align: middle; }
+thead tr:first-child th:first-child { border-top-left-radius: var(--r-lg); }
+thead tr:first-child th:last-child { border-top-right-radius: var(--r-lg); }
+tbody tr:last-child td:first-child { border-bottom-left-radius: var(--r-lg); }
+tbody tr:last-child td:last-child { border-bottom-right-radius: var(--r-lg); }
+/* 64px rows. The old 11px padding packed thirty staff into a block you
+   had to slow down to read; a shop roster is scanned, not studied. */
+th, td { padding: 16px 20px; text-align: left; vertical-align: middle; }
 th {
-  font-size: 11.5px;
+  font-size: 10px;
   font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.12em;
   color: var(--ink-3);
   border-bottom: 1px solid var(--line);
+  padding-top: 18px;
+  padding-bottom: 12px;
 }
 tr + tr td { border-top: 1px solid var(--line); }
 tbody tr { transition: background 140ms var(--ease); }
 tbody tr:hover { background: var(--hover); }
-td { font-size: 13.5px; font-weight: 400; color: var(--ink); }
+td { font-size: 14px; font-weight: 400; color: var(--ink); }
 
 /* ---------- status pills ---------- */
 /* Status reads as a coloured dot plus plain text, not a filled badge.
@@ -658,33 +752,34 @@ td { font-size: 13.5px; font-weight: 400; color: var(--ink); }
    the status column shout louder than the staff names. The dot keeps
    status scannable without a background, and the label still carries
    the meaning so nothing depends on colour alone. */
+/* Nocturne draws state as a filled lozenge, and on a near-black ground
+   that is the right call — a tinted pill reads as a chip of colour, not
+   as a sticker the way pastel lozenges did on cream. The rule that
+   survives from the old system: one per row, in the status column, and
+   never as decoration.
+
+   Amber is "this needs your decision". Mint is "settled". Anything the
+   owner has no lever over is a ring with no fill, so an unactionable
+   row cannot draw the eye like an actionable one. */
 .pill {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  font-size: 13px;
-  font-weight: 500;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
   white-space: nowrap;
-  color: var(--ink);
-  background: none;
-  padding: 0;
+  color: var(--ink-2);
+  background: var(--track);
+  padding: 7px 12px;
+  border-radius: var(--r-pill);
 }
-.pill::before {
-  content: "";
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  flex: none;
-  background: currentColor;
-}
-.pill.good    { color: var(--good); }
-.pill.warn    { color: var(--amber); }
-.pill.serious { color: var(--rose); }
-.pill.neutral { color: var(--ink-3); }
-.pill.info    { color: var(--good); }
-/* the label itself stays in ink so only the dot is coloured */
-.pill { --dot: currentColor; }
-.pill > span { color: var(--ink); }
+.pill.good    { color: var(--good);  background: var(--good-bg); }
+.pill.warn    { color: var(--on-accent); background: var(--amber); }
+.pill.serious { color: var(--serious); background: var(--serious-bg); }
+.pill.neutral { color: var(--ink-3); background: transparent; box-shadow: inset 0 0 0 1px var(--ink-3); }
+.pill.info    { color: var(--accent-text); background: var(--accent-soft); }
+.pill > span { color: inherit; }
 
 /* Lunch: the times on top, the length underneath. The length is the
    part the owner is actually judging, so it gets its own line rather
@@ -1235,31 +1330,29 @@ td { font-size: 13.5px; font-weight: 400; color: var(--ink); }
 }
 
 /* ---------- shop switcher ---------- */
+/* The shop switcher changes what every figure on every page means, so
+   it sits beside the logo as free-standing pills rather than inside a
+   track — a segmented control would read as a filter. */
 .branch-switch {
   display: flex;
-  gap: 4px;
-  background: rgba(0, 0, 0, 0.22);
-  border-radius: 999px;
-  padding: 4px;
-  margin-bottom: 14px;
+  gap: 8px;
 }
 .branch-btn {
-  flex: 1;
-  padding: 8px 10px;
+  padding: 11px 18px;
   border: none;
   border-radius: 999px;
   background: none;
-  color: var(--sidebar-ink-2);
+  color: var(--ink-3);
+  background: var(--track);
   font-family: inherit;
-  font-size: 13px;
-  font-weight: 500;
+  font-size: 13.5px;
+  font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  transition: background 160ms var(--ease), color 160ms var(--ease);
+  transition: background 200ms var(--ease), color 200ms var(--ease), transform 100ms var(--ease);
 }
-.branch-btn:hover { color: var(--sidebar-ink-hi); }
+.branch-btn:hover { color: var(--ink-2); background: var(--sidebar-wash); }
+.branch-btn:active { transform: scale(0.97); }
 .branch-btn.active { background: var(--accent); color: var(--on-accent); }
 .branch-single {
   color: var(--sidebar-ink-2);
@@ -1636,26 +1729,25 @@ code {
 .theme-switch {
   display: flex;
   gap: 3px;
-  padding: 3px;
-  margin-bottom: 8px;
-  background: rgba(0, 0, 0, 0.22);
-  border-radius: var(--r-lg);
+  padding: 4px;
+  background: var(--track);
+  border-radius: var(--r-pill);
+  flex: none;
 }
 .theme-btn {
-  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 7px 0;
+  padding: 9px 13px;
   background: none;
   border: 0;
-  border-radius: 9px;
-  color: var(--sidebar-ink-2);
+  border-radius: var(--r-pill);
+  color: var(--ink-3);
   cursor: pointer;
-  transition: background 140ms var(--ease), color 140ms var(--ease);
+  transition: background 200ms var(--ease), color 200ms var(--ease);
 }
-.theme-btn:hover { color: var(--sidebar-ink-hi); background: var(--sidebar-wash); }
-.theme-btn.active { background: var(--sidebar-wash); color: var(--sidebar-ink); }
+.theme-btn:hover { color: var(--ink-2); }
+.theme-btn.active { background: var(--accent); color: var(--on-accent); }
 .theme-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 /* ============================================================
@@ -1958,3 +2050,146 @@ code {
 }
 .map-grid .field-hint { margin-top: 2px; }
 .req { color: var(--accent); }
+
+/* ============================================================
+   TODAY — the two-column shape.
+
+   The left column is the day as it stands: how many are in, what needs
+   a decision, and the roster. The right column is money — what is owed
+   to the shop and what the shop took. They are separated because they
+   answer different questions and an owner arrives with one of them in
+   mind, not both.
+
+   The rail collapses under the roster below 1240px rather than
+   squeezing; two 380px columns on a laptop would leave the roster
+   unreadable, and the roster is the reason the page exists.
+   ============================================================ */
+.today-grid { display: flex; align-items: flex-start; gap: 20px; }
+.today-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.today-rail { width: 380px; flex: none; display: flex; flex-direction: column; gap: 12px; }
+
+@media (max-width: 1240px) {
+  .today-grid { flex-direction: column; }
+  .today-rail { width: 100%; flex-direction: row; flex-wrap: wrap; }
+  .today-rail > * { flex: 1; min-width: 280px; }
+}
+
+.today-top { display: flex; gap: 12px; align-items: stretch; }
+@media (max-width: 900px) { .today-top { flex-direction: column; } }
+
+/* the one figure the page opens with */
+.hero {
+  flex: 1;
+  min-width: 0;
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  padding: 28px 28px 26px;
+}
+.hero .when {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.hero-figure { display: flex; align-items: flex-end; gap: 16px; margin-top: 16px; }
+.hero-figure .n {
+  font-size: 88px;
+  font-weight: 600;
+  line-height: 0.84;
+  letter-spacing: -0.055em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.hero-figure .of {
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--ink-3);
+  padding-bottom: 10px;
+}
+.hero-figure .of small { font-size: 14px; font-weight: 400; display: block; }
+.hero-bar {
+  margin-top: 22px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--track);
+  overflow: hidden;
+}
+.hero-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 480ms var(--ease);
+}
+
+/* the standing problem, if there is one — a card, not a banner, so it
+   sits beside the count rather than pushing the page down */
+.alert-card {
+  width: 300px;
+  flex: none;
+  border-radius: var(--r-lg);
+  background: var(--amber-bg);
+  padding: 24px 22px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+}
+@media (max-width: 900px) { .alert-card { width: 100%; } }
+.alert-card .dot { width: 9px; height: 9px; border-radius: 999px; background: var(--amber); }
+.alert-card .say { font-size: 14.5px; font-weight: 500; line-height: 1.45; color: var(--ink); }
+.alert-card .sub { font-size: 12px; color: var(--ink-3); }
+
+/* the money rail */
+.rail-hero {
+  border-radius: var(--r-lg);
+  padding: 26px 24px;
+  background: var(--accent-panel);
+  color: #f5f4ff;
+}
+.rail-hero .label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #d2cefd;
+}
+.rail-hero .n {
+  font-size: 52px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.05em;
+  margin-top: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.rail-hero .sub { font-size: 13px; line-height: 1.5; color: #d2cefd; margin-top: 10px; }
+.rail-hero a { color: #f5f4ff; }
+
+.rail-card {
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  padding: 24px 24px 20px;
+}
+.rail-card .n {
+  font-size: 40px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.bars { display: flex; align-items: flex-end; gap: 6px; height: 70px; margin-top: 22px; }
+.bars > div { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.bars .bar {
+  width: 100%;
+  border-radius: 6px 6px 0 0;
+  background: var(--accent-soft);
+  transform-origin: bottom;
+}
+.bars .bar.on { background: var(--accent); }
+.bars .d { font-size: 10px; font-weight: 500; color: var(--ink-3); }
+.rail-empty { font-size: 13px; line-height: 1.6; color: var(--ink-3); margin-top: 14px; }

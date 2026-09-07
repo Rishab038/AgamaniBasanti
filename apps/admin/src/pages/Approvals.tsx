@@ -79,8 +79,11 @@ export default function Approvals() {
   return (
     <div>
       <div className="page-head">
-        <h1>Approvals</h1>
-        <p>Advance requests from staff — say yes or no, the app tells them instantly.</p>
+        <div>
+          <div className="kicker">Advance requests</div>
+          <h1>Approvals</h1>
+          <p>Say yes or no — the app tells them instantly.</p>
+        </div>
       </div>
 
       {error && <div className="banner error" onClick={() => setError(null)}>{error}</div>}

@@ -3,6 +3,7 @@
 // fingerprint machine, and advance requests answerable in one click.
 
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { WifiOff } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useBranch } from "../lib/branch";
@@ -73,6 +74,10 @@ export default function Dashboard() {
   const [markOpen, setMarkOpen] = useState(false);
   const [markWho, setMarkWho] = useState("");
   const [markSearch, setMarkSearch] = useState("");
+  // the money rail: what is owed to the shop, and what it has taken
+  const [outstanding, setOutstanding] = useState<number | null>(null);
+  const [oldestDays, setOldestDays] = useState<number | null>(null);
+  const [takings, setTakings] = useState<{ day: string; total: number }[]>([]);
   const { branchId, branch } = useBranch();
 
   useEffect(() => {
@@ -84,6 +89,8 @@ export default function Dashboard() {
     if (!branchId) return;
     const today = istToday();
     const dayStartUtc = new Date(`${today}T00:00:00+05:30`).toISOString();
+    const weekAgo = new Date(Date.now() - 6 * 86400_000)
+      .toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 
     // device_punches references machines by serial text rather than a
     // foreign key, so the branch filter cannot be an embedded join —
@@ -92,7 +99,7 @@ export default function Dashboard() {
       .from("devices").select("serial, last_seen_at").eq("branch_id", branchId);
     const serials = (devs ?? []).map((d) => d.serial);
 
-    const [att, app, dev, adv, bal, staff] = await Promise.all([
+    const [att, app, dev, adv, bal, staff, khata, oldest, sales] = await Promise.all([
       supabase
         .from("attendance_days")
         // !inner makes the embedded profile a join, so the branch
@@ -129,6 +136,24 @@ export default function Dashboard() {
       supabase
         .from("profiles").select("id, full_name")
         .eq("role", "worker").eq("active", true).eq("branch_id", branchId),
+      // What is still out on the street. customer_balances is already
+      // one row per customer, so this is the shop's whole khata.
+      supabase
+        .from("customer_balances").select("balance").eq("branch_id", branchId),
+      // Oldest unsettled bill — "24 days" is the sentence that makes an
+      // owner actually pick up the phone, in a way a total never does.
+      supabase
+        .from("credit_sales").select("created_at")
+        .eq("branch_id", branchId).is("settled_at", null)
+        .order("created_at").limit(1),
+      // A week of takings, already summed per day by the view (0064).
+      // Doing it here rather than in the browser is the difference
+      // between seven rows and several thousand.
+      supabase
+        .from("branch_sales_daily").select("sold_on, total")
+        .eq("branch_id", branchId)
+        .gte("sold_on", weekAgo)
+        .order("sold_on"),
     ]);
     if (att.error) setError(att.error.message);
     if (adv.error) setError(adv.error.message);
@@ -188,6 +213,38 @@ export default function Dashboard() {
       b[r.profile_id] = (b[r.profile_id] ?? 0) + Number(r.balance);
     }
     setBalances(b);
+
+    // Only money owed TO the shop counts as "out on the street". A
+    // customer in credit (a negative balance, money the shop holds for
+    // them) would otherwise quietly cancel out someone else's debt and
+    // make the figure read lower than what is actually owed.
+    const owed = (khata.data ?? [])
+      .map((r) => Number((r as { balance: number }).balance))
+      .filter((n) => n > 0)
+      .reduce((t, n) => t + n, 0);
+    setOutstanding(owed);
+
+    const first = (oldest.data ?? [])[0] as { created_at: string } | undefined;
+    setOldestDays(
+      first ? Math.floor((Date.now() - new Date(first.created_at).getTime()) / 86400_000) : null,
+    );
+
+    // The view returns only days that had sales; a closed day has no
+    // row at all. Filling the gaps here keeps the chart seven bars wide
+    // so a quiet Tuesday reads as quiet rather than as missing.
+    const byDay = new Map(
+      (sales.data ?? []).map((r) => {
+        const row = r as { sold_on: string; total: number };
+        return [row.sold_on, Number(row.total)];
+      }),
+    );
+    const week: { day: string; total: number }[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(Date.now() - i * 86400_000)
+        .toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+      week.push({ day: d, total: byDay.get(d) ?? 0 });
+    }
+    setTakings(week);
   };
 
   // reloads whenever the owner switches shop
@@ -383,6 +440,17 @@ export default function Dashboard() {
       empty: "Nobody is out for lunch right now." },
   ];
   const openCard = CARDS.find((c) => c.key === filter);
+
+  /* The line under the khata total. "The oldest is 24 days old" is the
+     sentence that makes an owner pick up the phone; a total on its own
+     never has. */
+  const khataLine = (() => {
+    if (outstanding === null) return "Reading the khata…";
+    if (outstanding === 0) return "Nothing owed. Every khata is settled.";
+    if (oldestDays === null) return "Unsettled khata.";
+    const d = oldestDays === 1 ? "day" : "days";
+    return `Unsettled khata. The oldest is ${oldestDays} ${d} old.`;
+  })();
   const visibleAdvances = advances.filter((a) => !dismissed.includes(a.id));
 
   /** 81 -> "1h 21m late", 25 -> "25 min late" */
@@ -433,29 +501,67 @@ export default function Dashboard() {
     <div>
       <div className="page-head">
         <div>
-          <h1>Today at {branch?.name ?? "the shop"}</h1>
-          <p>{staffCount} active staff</p>
+          <div className="kicker">
+            {staffCount} on the books · {branch?.name ?? "the shop"}
+          </div>
+          <h1>Today</h1>
         </div>
-        <span className="when">
-          {now.toLocaleDateString("en-IN", {
-            weekday: "short", day: "numeric", month: "short", timeZone: "Asia/Kolkata",
-          })}
-          {" · "}
-          {now.toLocaleTimeString("en-IN", {
-            hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata",
-          })}
-        </span>
       </div>
 
 
       {error && <div className="banner error" onClick={() => setError(null)}>{error}</div>}
       {notice && <div className="banner info" onClick={() => setNotice(null)}>{notice}</div>}
-      {staleDevices.length > 0 && (
-        <div className="banner warn">
-          <WifiOff />
-          The fingerprint machine hasn't synced for over 2 hours — check its internet.
-        </div>
-      )}
+
+      <div className="today-grid">
+        <div className="today-main">
+          <div className="today-top">
+            {/* How many are in, against how many there are. The single
+                figure the owner wants before anything else. */}
+            <div className="hero">
+              <div className="when">
+                {now.toLocaleDateString("en-IN", {
+                  weekday: "long", day: "numeric", month: "long", timeZone: "Asia/Kolkata",
+                })}
+              </div>
+              <div className="hero-figure">
+                <div className="n">{count("present")}</div>
+                <div className="of">
+                  of {staffCount} are in
+                  <small>{branch?.name ?? "the shop"}</small>
+                </div>
+              </div>
+              <div className="hero-bar">
+                <span
+                  style={{
+                    width: staffCount > 0
+                      ? `${Math.round((count("present") / staffCount) * 100)}%`
+                      : "0%",
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* A card beside the count rather than a banner above it.
+                The machine being silent is a standing condition, not an
+                event, and a banner pushed the whole page down every
+                morning it happened. */}
+            {staleDevices.length > 0 && (
+              <div className="alert-card">
+                <span className="dot" />
+                <div className="say">
+                  <WifiOff size={15} style={{ verticalAlign: "-2px", marginRight: 7 }} />
+                  The fingerprint machine has been silent over 2 hours. Check its internet.
+                </div>
+                <div className="sub">
+                  {staleDevices[0]?.last_seen_at
+                    ? `Last punch ${new Date(staleDevices[0].last_seen_at!).toLocaleTimeString("en-IN", {
+                        hour: "numeric", minute: "2-digit", hour12: true,
+                      })}`
+                    : "No punch on record"}
+                </div>
+              </div>
+            )}
+          </div>
 
       {/* Each indicator opens the table below out to just the people it
           is counting. Clicking the same one again puts everybody back. */}
@@ -684,6 +790,54 @@ export default function Dashboard() {
           </div>
         </div>
       ))}
+        </div>
+
+        {/* The money rail. Separate from the roster because it answers a
+            different question, and an owner arrives with one of the two
+            in mind rather than both. */}
+        <div className="today-rail">
+          <Link to="/credit" className="rail-hero" style={{ textDecoration: "none", display: "block" }}>
+            <div className="label">Out on the street</div>
+            <div className="n">{outstanding === null ? "—" : rupees(outstanding)}</div>
+            <div className="sub">{khataLine}</div>
+          </Link>
+
+          <div className="rail-card">
+            <div className="card-title">Today&rsquo;s takings</div>
+            <div className="n">
+              {takings.length > 0 ? rupees(takings[takings.length - 1].total) : "—"}
+            </div>
+            {takings.some((t) => t.total > 0) ? (
+              <div className="bars">
+                {takings.map((t, i) => {
+                  const peak = Math.max(...takings.map((x) => x.total), 1);
+                  return (
+                    <div key={t.day}>
+                      <div
+                        className={`bar${i === takings.length - 1 ? " on" : ""}`}
+                        style={{ height: `${Math.max(3, Math.round((t.total / peak) * 100))}%` }}
+                        title={`${t.day}: ${rupees(t.total)}`}
+                      />
+                      <div className="d">
+                        {new Date(`${t.day}T12:00:00`).toLocaleDateString("en-IN", { weekday: "narrow" })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              /* Not an empty chart — a sentence saying why it is empty.
+                 Seven flat bars would read as "the shop took nothing"
+                 rather than "no report has arrived yet". */
+              <div className="rail-empty">
+                No sales report has come in for this week yet. Oriel emails it
+                each night; <Link to="/sales">check the Sales page</Link> if this
+                stays empty.
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
 
       {zoom && (
         // Click anywhere or press Escape to dismiss — the owner is

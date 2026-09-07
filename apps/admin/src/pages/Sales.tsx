@@ -256,7 +256,8 @@ export default function Sales() {
     <div>
       <div className="page-head">
         <div>
-          <h1>Sales · {branch?.name ?? ""}</h1>
+          <div className="kicker">{branch?.name ?? ""}</div>
+          <h1>Sales</h1>
           <p>What each person sold</p>
         </div>
       </div>

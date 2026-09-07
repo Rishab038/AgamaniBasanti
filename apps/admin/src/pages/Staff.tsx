@@ -94,7 +94,7 @@ const emptyForm = {
 
 export default function Staff() {
   const [staff, setStaff] = useState<StaffRow[]>([]);
-  const { branchId } = useBranch();
+  const { branchId, branch } = useBranch();
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [busy, setBusy] = useState(false);
@@ -515,8 +515,13 @@ export default function Staff() {
   return (
     <div>
       <div className="page-head">
-        <h1>Staff</h1>
-        <p>Click a name to see and change everything about that person.</p>
+        <div>
+          <div className="kicker">
+            {staff.length} on the books{branch?.name ? ` · ${branch.name}` : ""}
+          </div>
+          <h1>Staff</h1>
+          <p>Click a name to see and change everything about that person.</p>
+        </div>
       </div>
 
       {notice && <div className="banner info" onClick={() => setNotice(null)}>{notice}</div>}
