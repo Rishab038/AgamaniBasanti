@@ -207,7 +207,10 @@ export default function Salary() {
           the owner came for; the controls that change it sit below. */}
       <div className="sheet-head">
         <div>
-          <h1>Salary · {branch?.name ?? ""}</h1>
+          <span className="kicker">
+            {monthName(month)}{branch?.name ? ` · ${branch.name}` : ""}
+          </span>
+          <h1>Salary</h1>
           <p className="sub">Check the draft, then confirm. Advances come off on their own.</p>
         </div>
         {slips.length > 0 && (

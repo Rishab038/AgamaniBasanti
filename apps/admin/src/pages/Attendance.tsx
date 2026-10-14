@@ -86,7 +86,7 @@ export default function Attendance() {
   const [query, setQuery] = useState("");
   const [rangeOpen, setRangeOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { branchId } = useBranch();
+  const { branchId, branch } = useBranch();
 
   // per-staff totals for the chosen period. A day counts as present if
   // anyone punched for it — however it was verified, and whatever the
@@ -268,11 +268,14 @@ export default function Attendance() {
           turnout, and the list underneath opens on the exceptions. */}
       <div className="sheet-head">
         <div>
+          <span className="kicker">
+            {rangeLabel}{branch?.name ? ` · ${branch.name}` : ""}
+          </span>
           <h1>Attendance</h1>
           <p className="sub">
             {workerId
               ? "Day by day — decide any day that needs your ruling."
-              : `${rangeLabel} · ${summary.length} ${summary.length === 1 ? "person" : "people"} · ${turnout}% turned up`}
+              : `${summary.length} ${summary.length === 1 ? "person" : "people"} · ${turnout}% turned up`}
           </p>
         </div>
         <div className="sheet-head-acts">

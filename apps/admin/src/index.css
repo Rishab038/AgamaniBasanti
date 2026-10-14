@@ -219,12 +219,16 @@ body {
 
 /* type scale: 20 / 15 / 14 / 13 / 12 — nothing else */
 h1 { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
+/* A section heading between cards. Sized as a card title rather than a
+   caption: on a long settings page these are the only landmarks, and at
+   13px they read as labels on the thing below rather than as divisions
+   of the page. */
 h2 {
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 600;
-  margin: 32px 0 8px;
-  color: var(--ink-2);
-  letter-spacing: 0;
+  margin: 34px 0 10px;
+  color: var(--ink);
+  letter-spacing: -0.02em;
   text-transform: none;
 }
 .muted { color: var(--ink-3); }
@@ -593,23 +597,42 @@ input:focus, select:focus {
 .banner.info { background: var(--good-bg); color: var(--good); border-color: color-mix(in srgb, var(--good) 34%, transparent); }
 .banner.error { background: var(--serious-bg); color: var(--serious); border-color: color-mix(in srgb, var(--serious) 34%, transparent); }
 
+/* An advance request. The AMOUNT is the thing being decided, so it
+   leads at 26px and the name sits beside it — the old card led with a
+   sentence and buried the number inside it, which made a page of
+   requests read as prose rather than as a queue of decisions. */
 .approval-card {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
+  gap: 18px;
   flex-wrap: wrap;
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--r-lg);
   box-shadow: var(--shadow-1);
-  padding: 18px 22px;
-  margin-top: 16px;
+  padding: 22px 26px;
+  margin-top: 12px;
   animation: rise-in 300ms var(--ease);
 }
-.approval-card .who { font-size: 16px; font-weight: 500; }
-.approval-card .why { color: var(--ink-3); font-size: 13.5px; font-weight: 500; margin-top: 2px; }
-.approval-card .acts { display: flex; gap: 10px; }
+.approval-card .amount {
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.approval-card .who { font-size: 14px; font-weight: 500; color: var(--ink); }
+.approval-card .head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.approval-card .why { color: var(--ink-3); font-size: 12.5px; line-height: 1.45; margin-top: 8px; }
+.approval-card .acts { display: flex; gap: 8px; flex: none; }
+
+/* the decided list, in the rail */
+.decided-row { padding: 15px 0; }
+.decided-row + .decided-row { border-top: 1px solid var(--line); }
+.decided-row .top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.decided-row .amt { font-size: 16px; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+.decided-row .meta { font-size: 12px; color: var(--ink-3); margin-top: 6px; }
 
 /* ---------- cards & forms ---------- */
 .card {
@@ -2193,3 +2216,151 @@ code {
 .bars .bar.on { background: var(--accent); }
 .bars .d { font-size: 10px; font-weight: 500; color: var(--ink-3); }
 .rail-empty { font-size: 13px; line-height: 1.6; color: var(--ink-3); margin-top: 14px; }
+
+/* ============================================================
+   NOCTURNE PAGE PARTS
+
+   The shapes every page after Today is built from. Kept here rather
+   than per-page because the whole point of the system is that a card on
+   Salary and a card on Credit are the same object.
+   ============================================================ */
+
+/* Attendance and Salary carry their own header (a filter row and two
+   actions sit in it), so rather than restructure both pages, the
+   heading inside it is brought up to the page-head scale. */
+.sheet-head h1 {
+  font-size: 34px;
+  font-weight: 500;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+}
+.sheet-head .kicker {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  display: block;
+  margin-bottom: 10px;
+}
+.sheet-head .sub { margin-top: 8px; font-size: 13.5px; font-weight: 400; color: var(--ink-3); }
+.sheet-head { align-items: flex-end; margin-bottom: 20px; }
+
+/* A strip of four figures. Distinct from `.stats` (the Today page's
+   clickable filters) because these are read, not pressed. */
+.tile-strip { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+.tile-strip > .tile { flex: 1; min-width: 150px; }
+.tile {
+  border-radius: var(--r);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  padding: 20px 22px;
+}
+.tile .n {
+  font-size: 34px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.tile .label { font-size: 12px; font-weight: 500; color: var(--ink-3); margin-top: 10px; }
+/* Salary reads label-first: the figures there are money, and an owner
+   needs to know which pot before reading the amount. */
+.tile.flip .label { margin: 0 0 12px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; }
+.tile.good  { background: var(--good-bg); }
+.tile.good .n { color: var(--good); }
+.tile.warn  { background: var(--amber-bg); }
+.tile.warn .n { color: var(--amber); }
+.tile.accent { background: var(--accent-soft); }
+.tile.accent .n { color: var(--accent-text); }
+
+/* main column + rail, the shape Approvals, Credit and Settings share */
+.split { display: flex; gap: 20px; align-items: flex-start; }
+.split-main { flex: 1; min-width: 0; }
+.split-rail { width: 380px; flex: none; display: flex; flex-direction: column; gap: 12px; }
+.split-rail.narrow { width: 340px; }
+@media (max-width: 1240px) {
+  .split { flex-direction: column; }
+  .split-rail, .split-rail.narrow { width: 100%; flex-direction: row; flex-wrap: wrap; }
+  .split-rail > * { flex: 1; min-width: 280px; }
+}
+
+/* how old a debt is, as three bars */
+.ageing { margin-top: 18px; }
+.ageing .row { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
+.ageing .row .amt { font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+.ageing .row .lab { color: var(--ink-3); }
+.ageing .track {
+  height: 8px; border-radius: 999px; background: var(--track);
+  margin: 9px 0 18px; overflow: hidden;
+}
+.ageing .track > span { display: block; height: 100%; border-radius: 999px; }
+
+/* the seven-day takings chart on Sales — taller than the rail version,
+   and each bar carries its own figure */
+.bars-big { display: flex; align-items: flex-end; gap: 10px; height: 130px; margin-top: 26px; }
+.bars-big > div { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.bars-big .v { font-size: 11.5px; font-weight: 600; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.bars-big .bar { width: 100%; border-radius: 8px 8px 0 0; background: var(--accent-soft); }
+.bars-big .bar.on { background: var(--accent); }
+.bars-big .d { font-size: 11px; font-weight: 500; color: var(--ink-3); }
+
+
+/* the one big money figure at the top of a card */
+.big-total {
+  font-size: 58px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.05em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  margin-top: 12px;
+}
+.card > .kicker {
+  font-size: 11px; font-weight: 500; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--ink-3);
+}
+.tile .label { text-transform: none; }
+.tile.accent .label { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; margin: 0 0 10px; }
+
+/* ---------- house rules ----------
+   A switch that writes straight through. There is no Save button on
+   this card, so the control itself has to carry the whole state: it
+   moves on press, and it goes back if the write fails. */
+.rule-row {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 16px 0;
+  min-height: 60px;
+}
+.rule-row + .rule-row { border-top: 1px solid var(--line); }
+.rule-text { flex: 1; min-width: 0; }
+.rule-text .lab { font-size: 14.5px; font-weight: 500; color: var(--ink); line-height: 1.2; }
+.rule-text .help { font-size: 12.5px; line-height: 1.45; color: var(--ink-3); margin-top: 5px; }
+
+.toggle {
+  flex: none;
+  border: 0;
+  cursor: pointer;
+  width: 52px;
+  height: 30px;
+  border-radius: 999px;
+  background: var(--track);
+  padding: 3px;
+  display: flex;
+  align-items: center;
+  transition: background 220ms var(--ease);
+}
+.toggle > span {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--ink-3);
+  transition: transform 220ms var(--ease), background 220ms var(--ease);
+}
+.toggle.on { background: var(--accent); }
+.toggle.on > span { transform: translateX(22px); background: var(--on-accent); }
+.toggle:disabled { opacity: 0.55; cursor: default; }
+.toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }

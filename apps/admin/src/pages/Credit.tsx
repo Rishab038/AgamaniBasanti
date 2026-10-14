@@ -356,6 +356,30 @@ export default function Credit() {
       .sort((a, b) => (lastActivity(b) ?? "").localeCompare(lastActivity(a) ?? ""));
   }, [rows, filter, q]);
 
+  /* How long the money has been out, in three bands.
+     Age is measured from the last PAYMENT, falling back to the last
+     bill when they have never paid — that is the honest clock for "how
+     long has this been sitting", and it resets when a customer pays
+     something off, which is the behaviour that makes chasing work. */
+  const ageing = (() => {
+    const bands = [
+      { label: "Under 15 days", max: 15, amount: 0, fill: "var(--good)" },
+      { label: "15 to 30 days", max: 31, amount: 0, fill: "var(--amber)" },
+      { label: "Over a month", max: Infinity, amount: 0, fill: "var(--serious)" },
+    ];
+    for (const c of rows) {
+      const owed = Number(c.balance);
+      if (owed <= 0) continue;
+      const since = c.last_payment_at ?? c.last_bill_at;
+      const days = since
+        ? Math.floor((Date.now() - new Date(since).getTime()) / 86400_000)
+        : Infinity;
+      (bands.find((b) => days < b.max) ?? bands[2]).amount += owed;
+    }
+    const peak = Math.max(...bands.map((b) => b.amount), 1);
+    return bands.map((b) => ({ ...b, pct: Math.round((b.amount / peak) * 100) }));
+  })();
+
   const willGet = rows.reduce((t, c) => t + (Number(c.balance) > 0 ? Number(c.balance) : 0), 0);
   const willGive = rows.reduce((t, c) => t + (Number(c.balance) < 0 ? -Number(c.balance) : 0), 0);
 
@@ -378,22 +402,8 @@ export default function Credit() {
 
       {error && <div className="banner error" onClick={() => setError(null)}>{error}</div>}
 
-      {/* The two numbers the owner opens this page for. */}
-      <div className="khata-summary card">
-        <div className="ks-half">
-          <span className="ks-label">You will give</span>
-          <span className="ks-give">{willGive === 0 ? "₹0" : rupees(willGive)}</span>
-          <span className="ks-note">advances held for customers</span>
-        </div>
-        <div className="ks-divider" />
-        <div className="ks-half">
-          <span className="ks-label">You will get</span>
-          <span className="ks-get">{willGet === 0 ? "₹0" : rupees(willGet)}</span>
-          <span className="ks-note">
-            from {counts.owes} customer{counts.owes === 1 ? "" : "s"}
-          </span>
-        </div>
-      </div>
+      <div className="split">
+        <div className="split-main">
 
       {/* Two ways to read the same book: by person (who owes me) and by
           day (what moved). The owner asks both, at different moments. */}
@@ -614,6 +624,45 @@ export default function Credit() {
       </p>
       </>
       )}
+        </div>
+
+        <div className="split-rail narrow">
+          {/* The two figures the owner opens this page for. Kept as a
+              pair rather than the one "total outstanding" the template
+              shows: money the shop holds FOR a customer and money owed
+              TO it are different obligations, and netting them into a
+              single number hides one of them. */}
+          <div className="rail-hero">
+            <div className="label">You will get</div>
+            <div className="n">{willGet === 0 ? "₹0" : rupees(willGet)}</div>
+            <div className="sub">
+              From {counts.owes} customer{counts.owes === 1 ? "" : "s"}.
+              {willGive > 0
+                ? ` You are holding ${rupees(willGive)} of customers' money as advances.`
+                : ""}
+            </div>
+          </div>
+
+          {willGet > 0 && (
+            <div className="card">
+              <div className="card-title">Ageing</div>
+              <div className="ageing">
+                {ageing.map((b) => (
+                  <div key={b.label}>
+                    <div className="row">
+                      <span className="lab">{b.label}</span>
+                      <span className="amt">{rupees(b.amount)}</span>
+                    </div>
+                    <div className="track">
+                      <span style={{ width: `${b.pct}%`, background: b.fill }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Correcting an entry. Money already written down is not casually
           rewritten, so the amount is the only figure that opens focused,

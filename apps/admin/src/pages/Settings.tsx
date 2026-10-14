@@ -26,6 +26,46 @@ type Device = {
   branch_id: string;
 };
 
+/* The house rules the owner can switch, and what each one actually
+   changes. Every entry here has code behind it — two in the phone app,
+   one in the payroll engine (migration 0065). Nothing is listed that
+   only looks like a setting.
+
+   `on`/`off` say what the shop will DO, not what the switch is set to.
+   "Selfie on check-in: off" is ambiguous; "the app stops asking for a
+   photo" is not. */
+const RULES = [
+  {
+    key: "require_selfie",
+    label: "Selfie on check-in",
+    help: "A photo when someone checks in, kept for two days. It only matters when the location check is unclear.",
+    fallback: true,
+    done: (on: boolean) =>
+      on ? "The app will ask for a photo at check-in again."
+         : "The app will stop asking for a photo at check-in.",
+  },
+  {
+    key: "enforce_geofence",
+    label: "Enforce the shop radius",
+    help: "Off means staff can check in from anywhere. The punch still records where they were and is marked for you.",
+    fallback: true,
+    done: (on: boolean) =>
+      on ? "Check-in is limited to the shop radius again."
+         : "Staff can now check in from anywhere. Those punches are marked.",
+  },
+  {
+    key: "auto_half_day",
+    label: "Auto half-day",
+    help: "Someone arriving after the midday cutoff is ruled a half day by the system instead of waiting for you. Days you have already ruled are never changed.",
+    fallback: false,
+    done: (on: boolean) =>
+      on ? "Late arrivals will be ruled a half day automatically."
+         : "Late arrivals will come to you for a ruling again.",
+  },
+] as const;
+
+const RULE_KEYS = RULES.map((r) => r.key);
+
 export default function Settings() {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
@@ -35,20 +75,29 @@ export default function Settings() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [newDevice, setNewDevice] = useState({ serial: "", model: "", branch_id: "" });
   const [newShop, setNewShop] = useState("");
+  // the three house rules, and which one is mid-save
+  const [rules, setRules] = useState<Record<string, boolean>>({});
+  const [savingRule, setSavingRule] = useState<string | null>(null);
   // which shop an unregistered machine should be assigned to
   const [attemptBranch, setAttemptBranch] = useState<Record<string, string>>({});
   const { reloadBranches, branchId, branch } = useBranch();
   const [attempts, setAttempts] = useState<{ serial: string; last_seen: string; hits: number }[]>([]);
 
   const load = async () => {
-    const [b, h, d, at] = await Promise.all([
+    const [b, h, d, at, rs] = await Promise.all([
       supabase.from("branches").select("*").order("created_at"),
       supabase.from("holidays").select("*").gte("on_date", new Date().toISOString().slice(0, 10)).order("on_date"),
       // all shops' machines are listed together: seeing both at once is
       // how you spot one plugged into the wrong shop
       supabase.from("devices").select("id, serial, model, last_seen_at, branch_id"),
       supabase.from("device_attempts").select("serial, last_seen, hits").order("last_seen", { ascending: false }),
+      supabase.from("app_settings").select("key, value").in("key", RULE_KEYS),
     ]);
+    const r: Record<string, boolean> = {};
+    for (const row of (rs.data ?? []) as { key: string; value: unknown }[]) {
+      r[row.key] = String(row.value) === "true";
+    }
+    setRules(r);
     setAttempts(at.data ?? []);
     setBranches(b.data ?? []);
     setHolidays(h.data ?? []);
@@ -62,6 +111,25 @@ export default function Settings() {
   const flash = (msg: string) => {
     setNotice(msg);
     setError(null);
+  };
+
+  /* Written straight through rather than staged behind a Save button.
+     There are three of them and each is one fact; a "save settings"
+     step would only create a state where the switch says one thing and
+     the shop does another. The switch reverts if the write fails. */
+  const flipRule = async (key: string, next: boolean) => {
+    setSavingRule(key);
+    setRules((r) => ({ ...r, [key]: next }));
+    const { error: err } = await supabase
+      .from("app_settings")
+      .upsert({ key, value: next }, { onConflict: "key" });
+    setSavingRule(null);
+    if (err) {
+      setRules((r) => ({ ...r, [key]: !next }));   // put it back
+      setError(err.message);
+    } else {
+      flash(RULES.find((x) => x.key === key)!.done(next));
+    }
   };
 
   const saveBranch = async (b: Branch) => {
@@ -110,6 +178,36 @@ export default function Settings() {
       </div>
       {notice && <div className="banner info" onClick={() => setNotice(null)}>{notice}</div>}
       {error && <div className="banner error" onClick={() => setError(null)}>{error}</div>}
+
+      <h2>House rules</h2>
+      <div className="card">
+        {RULES.map((r) => {
+          const on = rules[r.key] ?? r.fallback;
+          return (
+            <div className="rule-row" key={r.key}>
+              <div className="rule-text">
+                <div className="lab">{r.label}</div>
+                <div className="help">{r.help}</div>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={on}
+                aria-label={r.label}
+                disabled={savingRule === r.key}
+                className={`toggle${on ? " on" : ""}`}
+                onClick={() => flipRule(r.key, !on)}
+              >
+                <span />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      <p className="muted hint-line">
+        Staff phones pick these up when the app is next opened or brought
+        back to the front — no reinstall.
+      </p>
 
       <h2>Shop location (geofence)</h2>
       {branches.map((b) => (

@@ -35,7 +35,8 @@ import { runSpoofChecks } from "../../lib/antispoof";
 import { performCheckin } from "../../lib/checkin";
 import { colors, fonts, radius } from "../../lib/theme";
 import PhotoCapture from "../../components/PhotoCapture";
-import type { PunchKind, SharedData } from "../MainScreen";
+import type { HouseRules, PunchKind, SharedData } from "../MainScreen";
+import { DEFAULT_RULES } from "../MainScreen";
 
 const GRACE_MIN = 15;
 
@@ -87,11 +88,14 @@ export default function HomeTab({
   profile,
   branch,
   data,
+  rules = DEFAULT_RULES,
   active = true,
 }: {
   profile: Profile;
   branch: Branch;
   data: SharedData;
+  /** the owner's house rules; defaults are the old behaviour */
+  rules?: HouseRules;
   /** false while another tab is on screen: this one stays mounted but
    *  must not hold the GPS radio open behind it */
   active?: boolean;
@@ -125,7 +129,12 @@ export default function HomeTab({
   const nextIndex = stamps.findIndex((t) => t === null);
   const stage = nextIndex === -1 ? null : STAGES[nextIndex];
   const dayClosed = stage === null;
-  const enabled = fence.inside && !busy && !dayClosed;
+  // With the geofence switched off the slab still works away from the
+  // shop — the punch is recorded and marked, not blocked. The owner
+  // asked for that trade when they flipped it; what they get is a
+  // flagged row rather than a phone call.
+  const atWork = fence.inside || !rules.enforceGeofence;
+  const enabled = atWork && !busy && !dayClosed;
 
   const worked = data.monthDays.filter((d) =>
     ["VERIFIED", "APP_ONLY", "DEVICE_ONLY"].includes(d.status),
@@ -221,7 +230,7 @@ export default function HomeTab({
 
   const startPunch = (s: Stage) => {
     if (busy) return;
-    if (s.kind === "ARRIVAL") setPhotoFor(s);
+    if (s.kind === "ARRIVAL" && rules.requireSelfie) setPhotoFor(s);
     else punch(s);
   };
 
@@ -253,6 +262,10 @@ export default function HomeTab({
           ...(fence.via === "wifi" ? ["wifi_fallback"] : []),
           // worth knowing later why a doubtful fence has no photo to check
           ...(s.kind === "ARRIVAL" && !photoBase64 ? ["no_photo"] : []),
+          // The geofence is off AND they were not at the shop. Recorded
+          // so the owner can still see which punches the rule would
+          // have stopped, rather than losing that distinction entirely.
+          ...(!fence.inside ? ["outside_fence"] : []),
         ],
         photoBase64,
       });
@@ -489,7 +502,7 @@ export default function HomeTab({
                   <Text style={[styles.slabHint, !enabled && styles.slabInkOff]}>
                     {dayClosed
                       ? "Nothing left to tap"
-                      : locGranted === false
+                      : locGranted === false && rules.enforceGeofence
                         ? "Allow location first"
                         : enabled
                           ? stage!.hint

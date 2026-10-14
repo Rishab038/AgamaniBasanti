@@ -89,6 +89,9 @@ export default function Sales() {
 
   const [rows, setRows] = useState<StaffRow[]>([]);
   const [lines, setLines] = useState<Line[]>([]);
+  // the shop's own takings, from Oriel's nightly report (view 0064)
+  const [takings, setTakings] = useState<{ day: string; total: number }[]>([]);
+  const [onCredit, setOnCredit] = useState<number | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -104,7 +107,7 @@ export default function Sales() {
     // The lines themselves, once: small enough for the range the owner
     // actually looks at, and the same rows answer both the ranking and
     // the drill-down without a second round trip.
-    const [{ data: ls, error: lErr }, { data: staff }] = await Promise.all([
+    const [{ data: ls, error: lErr }, { data: staff }, day, khata] = await Promise.all([
       supabase
         .from("sale_lines")
         .select("id, profile_id, barcode, qty, unit_price, amount, sold_on, note, created_at, products(name)")
@@ -116,8 +119,44 @@ export default function Sales() {
         .from("profiles")
         .select("id, full_name")
         .eq("branch_id", branchId),
+      // Already summed per day by the view, so this is one row a day
+      // rather than every bill line in the range.
+      supabase
+        .from("branch_sales_daily")
+        .select("sold_on, total")
+        .eq("branch_id", branchId)
+        .gte("sold_on", from).lte("sold_on", to)
+        .order("sold_on"),
+      // What went out on khata over the same range. This is a real
+      // figure from credit_sales, not Oriel's total split by guesswork.
+      supabase
+        .from("credit_sales")
+        .select("bill_amount, created_at")
+        .eq("branch_id", branchId)
+        .gte("created_at", `${from}T00:00:00+05:30`)
+        .lte("created_at", `${to}T23:59:59+05:30`),
     ]);
     if (lErr) { setError(lErr.message); return; }
+
+    // One bar per day across the chosen range, with quiet days filled
+    // in. The view only returns days that had sales, and a missing bar
+    // would read as "no data" when it means "nobody bought anything".
+    const byDay = new Map(
+      ((day.data ?? []) as { sold_on: string; total: number }[])
+        .map((r) => [r.sold_on, Number(r.total)]),
+    );
+    const span: { day: string; total: number }[] = [];
+    for (let d = new Date(`${from}T12:00:00`); ; d.setDate(d.getDate() + 1)) {
+      const key = d.toLocaleDateString("en-CA");
+      span.push({ day: key, total: byDay.get(key) ?? 0 });
+      if (key >= to || span.length > 62) break;
+    }
+    setTakings(span);
+
+    setOnCredit(
+      ((khata.data ?? []) as { bill_amount: number }[])
+        .reduce((t, r) => t + Number(r.bill_amount), 0),
+    );
 
     const names = new Map<string, string>();
     for (const s of (staff as { id: string; full_name: string }[]) ?? []) {
@@ -290,6 +329,62 @@ export default function Sales() {
         <OrielImport onDone={loadSales} />
       ) : view === "staff" ? (
         <>
+          {/* The shop's own takings over the same range the table
+              below covers, from Oriel's nightly report. It answers the
+              question the per-staff table cannot: did the shop have a
+              good week. */}
+          {takings.length > 0 && (
+            <div className="split" style={{ marginBottom: 12 }}>
+              <div className="split-main">
+                <div className="card" style={{ margin: 0 }}>
+                  <div className="kicker">{takings.length} days</div>
+                  <div className="big-total">
+                    {rupees(takings.reduce((t, d) => t + d.total, 0))}
+                  </div>
+                  {takings.some((d) => d.total > 0) ? (
+                    <div className="bars-big">
+                      {takings.map((d, i) => {
+                        const peak = Math.max(...takings.map((x) => x.total), 1);
+                        return (
+                          <div key={d.day}>
+                            <div className="v">
+                              {d.total > 0 ? Math.round(d.total / 1000) + "k" : ""}
+                            </div>
+                            <div
+                              className={`bar${i === takings.length - 1 ? " on" : ""}`}
+                              style={{ height: `${Math.max(3, Math.round((d.total / peak) * 100))}%` }}
+                              title={`${d.day}: ${rupees(d.total)}`}
+                            />
+                            <div className="d">
+                              {new Date(`${d.day}T12:00:00`).toLocaleDateString("en-IN", { weekday: "narrow" })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="muted" style={{ marginTop: 14, lineHeight: 1.6 }}>
+                      No sales report has arrived for these days. Oriel emails it
+                      each night — bring one in from the Oriel sales tab if this
+                      stays empty.
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="split-rail narrow">
+                {/* Real, from credit_sales. The template also shows a
+                    cash split and a best-selling section; neither is
+                    derivable here — Oriel's report does not say whether
+                    a bill was cash, and products carry no section — so
+                    they are left out rather than guessed at. */}
+                <div className="tile accent" style={{ margin: 0 }}>
+                  <div className="label">ON KHATA THIS RANGE</div>
+                  <div className="n">{onCredit === null ? "—" : rupees(onCredit)}</div>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="card toolbar">
             <label className="toolbar-field">
               From

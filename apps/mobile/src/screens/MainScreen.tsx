@@ -34,6 +34,12 @@ export type AdvanceRecord = {
   status: "PENDING" | "APPROVED" | "REJECTED";
   created_at: string;
 };
+/** The house rules a worker's phone has to obey. Defaults match the
+ *  behaviour before there was a switch, so a phone that cannot reach
+ *  the setting behaves exactly as it always did. */
+export type HouseRules = { requireSelfie: boolean; enforceGeofence: boolean };
+export const DEFAULT_RULES: HouseRules = { requireSelfie: true, enforceGeofence: true };
+
 export type SharedData = {
   monthDays: DayRecord[];
   todayPunches: PunchRecord[];
@@ -93,6 +99,28 @@ export default function MainScreen({
   const [lateSyncDates, setLateSyncDates] = useState<Set<string>>(new Set());
   const [pending, setPending] = useState(0);
   const [stuck, setStuck] = useState(0);
+  const [rules, setRules] = useState<HouseRules>(DEFAULT_RULES);
+
+  // Deliberately NOT part of reload(). These change perhaps twice a
+  // year, and reload() runs on every Realtime event on four tables —
+  // putting them there would fetch a settings row every time somebody's
+  // advance was approved. Once on open, and again when the app is
+  // brought back, is more than enough.
+  const loadRules = useCallback(async () => {
+    const { data } = await supabase
+      .from("app_settings")
+      .select("key, value")
+      .in("key", ["require_selfie", "enforce_geofence"]);
+    if (!data) return;                       // offline: keep what we have
+    const on = (k: string, fallback: boolean) => {
+      const row = data.find((r) => r.key === k);
+      return row ? String(row.value) === "true" : fallback;
+    };
+    setRules({
+      requireSelfie: on("require_selfie", true),
+      enforceGeofence: on("enforce_geofence", true),
+    });
+  }, []);
 
   // Every tab reads `shared`, so a reload that fetched identical rows used
   // to re-render all of them anyway: `setMonthDays(days.data)` always
@@ -168,7 +196,8 @@ export default function MainScreen({
 
   useEffect(() => {
     drain().then(reload);
-  }, [reload]);
+    loadRules();
+  }, [reload, loadRules]);
 
   useEffect(() => {
     registerForPush(profile.id);
@@ -219,6 +248,7 @@ export default function MainScreen({
       lastForeground.current = Date.now();
 
       drain().then(reload);
+      loadRules();
 
       // Only look for an OTA update after a real gap, so flicking
       // between apps does not hammer the update server. Was 60s, which
@@ -238,7 +268,7 @@ export default function MainScreen({
       }
     });
     return () => sub.remove();
-  }, [reload]);
+  }, [reload, loadRules]);
 
   // A fresh object here meant every tab saw a new `data` prop on every
   // render of this screen — including ones that changed nothing it uses
@@ -275,7 +305,13 @@ export default function MainScreen({
             opened still costs nothing. */}
         {visited.home && (
           <View style={tab === "home" ? styles.page : styles.pageHidden}>
-            <HomeTab profile={profile} branch={branch} data={shared} active={tab === "home"} />
+            <HomeTab
+              profile={profile}
+              branch={branch}
+              data={shared}
+              rules={rules}
+              active={tab === "home"}
+            />
           </View>
         )}
         {visited.attendance && (

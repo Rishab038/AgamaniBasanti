@@ -80,7 +80,9 @@ export default function Approvals() {
     <div>
       <div className="page-head">
         <div>
-          <div className="kicker">Advance requests</div>
+          <div className="kicker">
+            {pending.length === 0 ? "Advance requests" : `${pending.length} waiting on you`}
+          </div>
           <h1>Approvals</h1>
           <p>Say yes or no — the app tells them instantly.</p>
         </div>
@@ -88,21 +90,24 @@ export default function Approvals() {
 
       {error && <div className="banner error" onClick={() => setError(null)}>{error}</div>}
 
+      <div className="split">
+        <div className="split-main">
       {pending.length === 0 && (
         <div className="card">
-          <span className="muted">Nothing waiting for you right now. 🎉</span>
+          <span className="muted">Nothing waiting for you right now.</span>
         </div>
       )}
 
       {pending.map((a) => (
         <div className="approval-card" key={a.id}>
-          <div>
-            <div className="who">
-              {titleCase(a.profiles?.full_name ?? "")}
-              {a.recorded_by && a.recorded_by !== a.profile_id
-                ? " took " : " asked for "}
-              {rupees(a.amount)}
-              <span className="muted"> · {fmtDate(a.created_at)}</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="head">
+              <span className="amount">{rupees(a.amount)}</span>
+              <span className="who">
+                {titleCase(a.profiles?.full_name ?? "")}
+                {a.recorded_by && a.recorded_by !== a.profile_id ? " · took it" : " · asked"}
+              </span>
+              <span className="muted" style={{ fontSize: 12 }}>{fmtDate(a.created_at)}</span>
             </div>
             {/* Who wrote it down matters only when it was not the person
                 who took the money — then it is the whole provenance. */}
@@ -142,39 +147,36 @@ export default function Approvals() {
         </div>
       ))}
 
-      {decided.length > 0 && (
-        <>
-          <h2>Recent decisions</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>Staff</th>
-                <th>Amount</th>
-                <th>Reason</th>
-                <th>Decision</th>
-                <th>When</th>
-              </tr>
-            </thead>
-            <tbody>
+        </div>
+
+        {/* The template puts leave requests here. This shop has no leave
+            feature — there is no table behind it — so rather than invent
+            one, the rail carries what the owner actually looks back at:
+            what they already decided, and when. It also gets the
+            history out of the way of the queue. */}
+        {decided.length > 0 && (
+          <div className="split-rail">
+            <div className="card">
+              <div className="card-title">Recent decisions</div>
               {decided.map((a) => (
-                <tr key={a.id}>
-                  <td>
-                    <strong>{titleCase(a.profiles?.full_name ?? "")}</strong>
-                  </td>
-                  <td>{rupees(a.amount)}</td>
-                  <td className="muted">{a.reason ?? "—"}</td>
-                  <td>
-                    <span className={`pill ${a.status === "APPROVED" ? "good" : "serious"}`}>
-                      {a.status === "APPROVED" ? "Approved" : "Rejected"}
+                <div className="decided-row" key={a.id}>
+                  <div className="top">
+                    <span className="amt">{rupees(a.amount)}</span>
+                    <span className={`pill ${a.status === "APPROVED" ? "good" : "neutral"}`}>
+                      {a.status === "APPROVED" ? "Approved" : "Declined"}
                     </span>
-                  </td>
-                  <td className="muted">{a.decided_at ? fmtDate(a.decided_at) : "—"}</td>
-                </tr>
+                  </div>
+                  <div className="meta">
+                    {titleCase(a.profiles?.full_name ?? "")}
+                    {a.reason ? ` · ${a.reason}` : ""}
+                    {a.decided_at ? ` · ${fmtDate(a.decided_at)}` : ""}
+                  </div>
+                </div>
               ))}
-            </tbody>
-          </table>
-        </>
-      )}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
